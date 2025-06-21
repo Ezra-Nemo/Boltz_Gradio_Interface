@@ -1,4 +1,4 @@
-import os, re, uuid, json, torch, base64, shutil, zipfile, tempfile, subprocess
+import os, re, uuid, json, torch, base64, shutil, zipfile, tempfile, subprocess, threading
 import numpy as np
 import gradio as gr
 import pandas as pd
@@ -105,6 +105,16 @@ all_boltz_parameters = [device_number, accelerator_type, recycling_steps, sampli
                         diffusion_samples, step_scale, num_workers, preprocessing_threads,
                         affinity_mw_correction, sampling_steps_affinity, diffusion_samples_affinity,
                         use_potentials, boltz_method, no_trifast, override]
+
+def concurrent_download_model_weight():
+    cache_pth = Path('~/.boltz').expanduser()
+    cache_pth.mkdir(exist_ok=True)
+    all_files = os.listdir(cache_pth)
+    if ('mols' in all_files and 'ccd.pkl' in all_files and 
+        'boltz2_conf.ckpt' in all_files and 'boltz2_aff.ckpt' in all_files):
+        return
+    download_boltz2(cache_pth)
+    return
 
 def manual_download_boltz_weights():
     cache_pth = Path('~/.boltz').expanduser()
@@ -2174,4 +2184,5 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         return old_dict, gr.update(choices=list(old_dict)), gr.update(choices=list(old_dict))
 
 
+threading.Thread(target=concurrent_download_model_weight, daemon=True).start()
 Interface.launch(server_name="0.0.0.0", server_port=7860)
