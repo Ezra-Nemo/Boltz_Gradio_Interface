@@ -246,6 +246,18 @@ def update_template_dropdown(curr_name: str, template_name_chain_dict: dict,
             gr.update(value=template_name_setting_dict[curr_name]['template_id'],
                       choices=template_name_chain_dict[curr_name]))
 
+def update_bond_sequence_length_with_chain(sel_chain: str, mapping_dict: dict):
+    data_dict = mapping_dict.get(sel_chain, None)
+    if data_dict is None:
+        return gr.update(choices=None, value=None)
+    if data_dict['type'] in ['CCD']:
+        return gr.update(choices=['1'], value='1', interactive=True)
+    elif data_dict['type'] in ['Protein', 'DNA', 'RNA']:
+        total_len = len(data_dict['sequence'])
+        return gr.update(choices=[str(i) for i in range(1, total_len+1)], value='1', interactive=True)
+    else:
+        return gr.update(choices=None, value=None)
+
 ### Running Boltz ###
 def execute_single_boltz(file_name: str, yaml_str: str,
                          devices: int, accelerator: str,
@@ -1063,6 +1075,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         template_name_chain_dict, template_name_path_dict,\
                 template_name_usage_dict, template_name_setting_dict = \
                     gr.State({}), gr.State({}), gr.State({}), gr.State({})
+        chain_res_dict = gr.State({})
         with gr.Accordion('Template', open=False):
             with gr.Row():
                 with gr.Group():
@@ -1078,7 +1091,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                         multiselect=True, interactive=True)
         
         with gr.Row(equal_height=True):
-            with gr.Column(min_width=200):
+            with gr.Column(min_width=150):
                 gr.Markdown('<span style="font-size:15px; font-weight:bold;">Name, Affinity & Entities</span>')
                 single_complex_name = gr.Text(label='Name',
                                               placeholder='Complex_1',
@@ -1088,7 +1101,32 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 mod_entity_number = gr.Number(1, label='Total Entity',
                                               interactive=True, minimum=1, step=1)
             
-            with gr.Column(min_width=200):
+            with gr.Column(min_width=150):
+                gr.Markdown('<span style="font-size:15px; font-weight:bold;">Bond conditioning</span>')
+                with gr.Group():
+                    with gr.Row():
+                        with gr.Column(min_width=60):
+                            atom1_chain_dropdown = gr.Dropdown(label='Atom1 Chain',
+                                                               interactive=True)
+                            atom1_res_dropdown   = gr.Dropdown(label='Atom1 Residue',
+                                                               interactive=True)
+                            atom1_atmname_text   = gr.Text(label='Atom1 Name',
+                                                           interactive=True)
+                        with gr.Column(min_width=60):
+                            atom2_chain_dropdown = gr.Dropdown(label='Atom2 Chain',
+                                                               interactive=True)
+                            atom2_res_dropdown   = gr.Dropdown(label='Atom2 Residue',
+                                                               interactive=True)
+                            atom2_atmname_text   = gr.Text(label='Atom2 Name',
+                                                           interactive=True)
+                atom1_chain_dropdown.change(update_bond_sequence_length_with_chain,
+                                            inputs=[atom1_chain_dropdown, chain_res_dict],
+                                            outputs=atom1_res_dropdown)
+                atom2_chain_dropdown.change(update_bond_sequence_length_with_chain,
+                                            inputs=[atom2_chain_dropdown, chain_res_dict],
+                                            outputs=atom2_res_dropdown)
+            
+            with gr.Column(min_width=150):
                 gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket conditioning</span>')
                 pocket_binder = gr.Dropdown(label='Binder',
                                             interactive=True)
@@ -1125,7 +1163,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
             aff_final = [''] + sorted(affinity_chains)
             return (gr.update(choices=final_choices), gr.update(choices=aff_final),
                     gr.update(choices=final_choices), gr.update(choices=final_choices),
-                    gr.update(choices=final_choices))
+                    gr.update(choices=final_choices),)
         
         @gr.render(inputs=mod_entity_number)
         def append_new_entity(counts: int):
@@ -1141,7 +1179,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                 key=f'ET_{i}', scale=1)
                         chain_name_text = gr.Text('',
                                                 label='Chains',
-                                                info='Press Enter to update Binder',
+                                                info='Press Enter to update Chains',
                                                 placeholder='A,B,C',
                                                 interactive=True,
                                                 key=f'Chain_{i}',
@@ -1176,7 +1214,15 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                        outputs=[sequence_text, highlight_text, cyclic_ckbox])
                     sequence_text.input(validate_sequence,
                                         inputs=[entity_menu, sequence_text],
-                                        outputs=highlight_text)
+                                        outputs=[highlight_text])
+                    chain_name_text.submit(update_chain_seq_dict,
+                                           inputs=[entity_menu, chain_name_text,
+                                                   sequence_text, chain_res_dict],
+                                           outputs=[chain_res_dict, atom1_chain_dropdown, atom2_chain_dropdown])
+                    entity_menu.change(update_chain_seq_dict,
+                                       inputs=[entity_menu, chain_name_text,
+                                               sequence_text, chain_res_dict],
+                                       outputs=[chain_res_dict, atom1_chain_dropdown, atom2_chain_dropdown])
                 
                 gr.HTML("<hr>")
             
@@ -1188,16 +1234,19 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                    outputs=[pocket_binder, affinity_binder,
                                             contact_1_dropdown, contact_2_dropdown,
                                             target_chain_ids])
-                chain_input.input(update_all_chains_dropdown,
-                                  inputs=chain_components,
-                                  outputs=[pocket_binder, affinity_binder,
-                                           contact_1_dropdown, contact_2_dropdown,
-                                           target_chain_ids])
+                # chain_input.input(update_all_chains_dropdown,
+                #                   inputs=chain_components,
+                #                   outputs=[pocket_binder, affinity_binder,
+                #                            contact_1_dropdown, contact_2_dropdown,
+                #                            target_chain_ids, atom1_chain_dropdown,
+                #                            atom2_chain_dropdown])
             
             def write_yaml_func(binder, target, pocket_max_d, aff_binder,
                                 cont_1_c, cont_1_r, cont_2_c, cont_2_r,
                                 template_name_path_dict, template_name_usage_dict,
                                 template_name_setting_dict,
+                                bond_atom1_chain, bond_atom1_res, bond_atom1_name,
+                                bond_atom2_chain, bond_atom2_res, bond_atom2_name,
                                 *all_components):
                 all_components = list(all_components)
                 
@@ -1226,6 +1275,16 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         data_dict['constraints'].append(contact_dict)
                     else:
                         data_dict['constraints'] = [contact_dict]
+                
+                # constraints --> bond
+                if all((bond_atom1_chain, bond_atom1_res, bond_atom1_name,
+                        bond_atom2_chain, bond_atom2_res, bond_atom2_name)):
+                    bond_dict = {'bond': {'atom1': [bond_atom1_chain, bond_atom1_res, bond_atom1_name.strip()],
+                                          'atom2': [bond_atom2_chain, bond_atom2_res, bond_atom2_name.strip()]}}
+                    if 'constraints' in data_dict:
+                        data_dict['constraints'].append(bond_dict)
+                    else:
+                        data_dict['constraints'] = [bond_dict]
                 
                 # properties
                 if aff_binder:
@@ -1331,7 +1390,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                             pocket_max_distance, affinity_binder,
                                             contact_1_dropdown, contact_1_text,
                                             contact_2_dropdown, contact_2_text,
-                                            template_name_path_dict, template_name_usage_dict, template_name_setting_dict,
+                                            template_name_path_dict,
+                                            template_name_usage_dict, 
+                                            template_name_setting_dict,
+                                            atom1_chain_dropdown, atom1_res_dropdown, atom1_atmname_text,
+                                            atom2_chain_dropdown, atom2_res_dropdown, atom2_atmname_text,
                                             *component_refs],
                                     outputs=[yaml_text])
         
@@ -1588,7 +1651,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     gr.Markdown(f'<span style="font-size:15px; font-weight:bold;">Entity {i+1}</span>', key=f'MK_{i}')
                     with gr.Row(key=f'Entity_{i}', equal_height=True):
                         with gr.Column(key=f'Entity_{i}_sub1', scale=1):
-                            entity_menu = gr.Dropdown(entity_types[:3],
+                            entity_menu = gr.Dropdown(entity_types,
                                                       label='Entity',
                                                       value=entity_types[0],
                                                       interactive=True,
@@ -2102,6 +2165,13 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 labeled_sequence = [(sequence, "✓")]
                 
         return labeled_sequence
+    
+    def update_chain_seq_dict(entity_type: str, chain: str, seq: str, old_dict: dict):
+        if not all((chain, seq)):
+            return old_dict, gr.update(), gr.update()
+        old_dict.update({chain: {'type'    : entity_type,
+                                 'sequence': seq,}})
+        return old_dict, gr.update(choices=list(old_dict)), gr.update(choices=list(old_dict))
 
 
 Interface.launch(server_name="0.0.0.0", server_port=7860)
