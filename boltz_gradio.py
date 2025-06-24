@@ -1153,11 +1153,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     with gr.Row():
                         contact_1_dropdown = gr.Dropdown(label='Chain 1',
                                                          interactive=True)
-                        contact_1_text = gr.Text(label='Reside')
+                        contact_1_text = gr.Text(label='Reside IDX/Atom Name')
                     with gr.Row():
                         contact_2_dropdown = gr.Dropdown(label='Chain 2',
                                                          interactive=True)
-                        contact_2_text = gr.Text(label='Reside')
+                        contact_2_text = gr.Text(label='Reside IDX/Atom Name')
                     contact_max_distance = gr.Number(6, label='Max Distance (Å)',
                                                      interactive=True, minimum=1)
         
@@ -1290,8 +1290,14 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 # constraints --> bond
                 if all((bond_atom1_chain, bond_atom1_res, bond_atom1_name,
                         bond_atom2_chain, bond_atom2_res, bond_atom2_name)):
-                    bond_dict = {'bond': {'atom1': [bond_atom1_chain, bond_atom1_res, bond_atom1_name.strip()],
-                                          'atom2': [bond_atom2_chain, bond_atom2_res, bond_atom2_name.strip()]}}
+                    bond_atom1_name: str = bond_atom1_name.strip()
+                    bond_atom2_name: str = bond_atom2_name.strip()
+                    if bond_atom1_name.isdigit():
+                        bond_atom1_name = int(bond_atom1_name)
+                    if bond_atom2_name.isdigit():
+                        bond_atom2_name = int(bond_atom2_name)
+                    bond_dict = {'bond': {'atom1': [bond_atom1_chain, bond_atom1_res, bond_atom1_name],
+                                          'atom2': [bond_atom2_chain, bond_atom2_res, bond_atom2_name]}}
                     if 'constraints' in data_dict:
                         data_dict['constraints'].append(bond_dict)
                     else:
