@@ -1101,7 +1101,58 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     template_chain_ids = gr.Dropdown(label='Template Chain IDs',
                                                         multiselect=True, interactive=True)
         
-        with gr.Row(equal_height=True):
+        with gr.Accordion('Constraints', open=False):
+            with gr.Row(equal_height=True):
+                with gr.Column(scale=1):
+                    gr.Markdown('<span style="font-size:15px; font-weight:bold;">Bond conditioning</span>')
+                    with gr.Group():
+                        with gr.Row():
+                            with gr.Column(min_width=60):
+                                atom1_chain_dropdown = gr.Dropdown(label='Atom1 Chain',
+                                                                interactive=True)
+                                atom1_res_dropdown   = gr.Dropdown(label='Atom1 Residue',
+                                                                interactive=True)
+                                atom1_atmname_text   = gr.Text(label='Atom1 Name',
+                                                            interactive=True)
+                            with gr.Column(min_width=60):
+                                atom2_chain_dropdown = gr.Dropdown(label='Atom2 Chain',
+                                                                interactive=True)
+                                atom2_res_dropdown   = gr.Dropdown(label='Atom2 Residue',
+                                                                interactive=True)
+                                atom2_atmname_text   = gr.Text(label='Atom2 Name',
+                                                            interactive=True)
+                    atom1_chain_dropdown.change(update_bond_sequence_length_with_chain,
+                                                inputs=[atom1_chain_dropdown, chain_res_dict],
+                                                outputs=atom1_res_dropdown)
+                    atom2_chain_dropdown.change(update_bond_sequence_length_with_chain,
+                                                inputs=[atom2_chain_dropdown, chain_res_dict],
+                                                outputs=atom2_res_dropdown)
+                
+                with gr.Column(scale=1):
+                    gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket conditioning</span>')
+                    pocket_binder = gr.Dropdown(label='Binder',
+                                                interactive=True)
+                    pocket_text = gr.Text(label='Target Pockets',
+                                        placeholder='B:12,B:23',
+                                        interactive=True)
+                    pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                    interactive=True, minimum=1)
+                
+                with gr.Column(scale=2):
+                    gr.Markdown('<span style="font-size:15px; font-weight:bold;">Contact Conditioning</span>')
+                    with gr.Group():
+                        with gr.Row():
+                            contact_1_dropdown = gr.Dropdown(label='Chain 1',
+                                                            interactive=True)
+                            contact_1_text = gr.Text(label='Reside IDX/Atom Name')
+                        with gr.Row():
+                            contact_2_dropdown = gr.Dropdown(label='Chain 2',
+                                                            interactive=True)
+                            contact_2_text = gr.Text(label='Reside IDX/Atom Name')
+                        contact_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                        interactive=True, minimum=1)
+        
+        with gr.Row():
             with gr.Column(min_width=150):
                 gr.Markdown('<span style="font-size:15px; font-weight:bold;">Name, Affinity & Entities</span>')
                 single_complex_name = gr.Text(label='Name',
@@ -1112,55 +1163,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 mod_entity_number = gr.Number(1, label='Total Entity',
                                               interactive=True, minimum=1, step=1)
             
-            with gr.Column(min_width=150):
-                gr.Markdown('<span style="font-size:15px; font-weight:bold;">Bond conditioning</span>')
-                with gr.Group():
-                    with gr.Row():
-                        with gr.Column(min_width=60):
-                            atom1_chain_dropdown = gr.Dropdown(label='Atom1 Chain',
-                                                               interactive=True)
-                            atom1_res_dropdown   = gr.Dropdown(label='Atom1 Residue',
-                                                               interactive=True)
-                            atom1_atmname_text   = gr.Text(label='Atom1 Name',
-                                                           interactive=True)
-                        with gr.Column(min_width=60):
-                            atom2_chain_dropdown = gr.Dropdown(label='Atom2 Chain',
-                                                               interactive=True)
-                            atom2_res_dropdown   = gr.Dropdown(label='Atom2 Residue',
-                                                               interactive=True)
-                            atom2_atmname_text   = gr.Text(label='Atom2 Name',
-                                                           interactive=True)
-                atom1_chain_dropdown.change(update_bond_sequence_length_with_chain,
-                                            inputs=[atom1_chain_dropdown, chain_res_dict],
-                                            outputs=atom1_res_dropdown)
-                atom2_chain_dropdown.change(update_bond_sequence_length_with_chain,
-                                            inputs=[atom2_chain_dropdown, chain_res_dict],
-                                            outputs=atom2_res_dropdown)
             
-            with gr.Column(min_width=150):
-                gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket conditioning</span>')
-                pocket_binder = gr.Dropdown(label='Binder',
-                                            interactive=True)
-                pocket_text = gr.Text(label='Target Pockets',
-                                      placeholder='B:12,B:23',
-                                      interactive=True)
-                pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                interactive=True, minimum=1)
-            
-            with gr.Column(min_width=350):
-                gr.Markdown('<span style="font-size:15px; font-weight:bold;">Contact Conditioning</span>')
-                with gr.Group():
-                    with gr.Row():
-                        contact_1_dropdown = gr.Dropdown(label='Chain 1',
-                                                         interactive=True)
-                        contact_1_text = gr.Text(label='Reside IDX/Atom Name')
-                    with gr.Row():
-                        contact_2_dropdown = gr.Dropdown(label='Chain 2',
-                                                         interactive=True)
-                        contact_2_text = gr.Text(label='Reside IDX/Atom Name')
-                    contact_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                     interactive=True, minimum=1)
-        
         def update_all_chains_dropdown(*all_entity_chain_values):
             all_chains = set()
             affinity_chains = set()
@@ -1357,7 +1360,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         return f'Entity {i//5+1} is empty!'
                     if entity == 'CCD':
                         seq_key = 'ccd'
-                        if not re.fullmatch(r'[A-Z0-9]{3}', seq):
+                        if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', seq):
                             return f'Entity {i//5+1} is not a valid CCD ID!'
                     elif entity == 'Ligand':
                         seq_key = 'smiles'
@@ -1801,7 +1804,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                             return f'Entity {i//5+1} is empty!'
                         if entity == 'CCD':
                             seq_key = 'ccd'
-                            if not re.fullmatch(r'[A-Z0-9]{3}', seq):
+                            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', seq):
                                 return f'Entity {i//5+1} is not a valid CCD ID!'
                         elif entity == 'Ligand':
                             seq_key = 'smiles'
@@ -2179,7 +2182,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         
         elif entity_type == 'CCD':
             sequence = sequence.upper()
-            if not re.fullmatch(r'[A-Z0-9]{3}', sequence):
+            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', sequence):
                 labeled_sequence = [(sequence, "X")]
             else:
                 labeled_sequence = [(sequence, "✓")]
