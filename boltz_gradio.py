@@ -1253,13 +1253,14 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 #                            atom2_chain_dropdown])
             
             def write_yaml_func(binder, target, pocket_max_d, aff_binder,
-                                cont_1_c, cont_1_r, cont_2_c, cont_2_r,
+                                cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist,
                                 template_name_path_dict, template_name_usage_dict,
                                 template_name_setting_dict,
                                 bond_atom1_chain, bond_atom1_res, bond_atom1_name,
                                 bond_atom2_chain, bond_atom2_res, bond_atom2_name,
                                 *all_components):
                 all_components = list(all_components)
+                # TODO: Add more advanced format validation functions!
                 
                 # constraints --> pocket
                 if binder and target:
@@ -1280,8 +1281,15 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 
                 # constraints --> contact
                 if cont_1_c and cont_1_r.strip() and cont_2_c and cont_2_r.strip():
-                    contact_dict = {'contact': {'token1': [cont_1_c, cont_1_r.strip()],
-                                                'token2': [cont_2_c, cont_2_r.strip()],}}
+                    cont_1_r = cont_1_r.strip()
+                    cont_2_r = cont_2_r.strip()
+                    if cont_1_r.isdigit():
+                        cont_1_r = int(cont_1_r)
+                    if cont_2_r.isdigit():
+                        cont_2_r = int(cont_2_r)
+                    contact_dict = {'contact': {'token1': [cont_1_c, cont_1_r],
+                                                'token2': [cont_2_c, cont_2_r],
+                                                'max_distance': contact_max_dist}}
                     if 'constraints' in data_dict:
                         data_dict['constraints'].append(contact_dict)
                     else:
@@ -1290,14 +1298,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 # constraints --> bond
                 if all((bond_atom1_chain, bond_atom1_res, bond_atom1_name,
                         bond_atom2_chain, bond_atom2_res, bond_atom2_name)):
-                    bond_atom1_name: str = bond_atom1_name.strip()
-                    bond_atom2_name: str = bond_atom2_name.strip()
-                    if bond_atom1_name.isdigit():
-                        bond_atom1_name = int(bond_atom1_name)
-                    if bond_atom2_name.isdigit():
-                        bond_atom2_name = int(bond_atom2_name)
-                    bond_dict = {'bond': {'atom1': [bond_atom1_chain, bond_atom1_res, bond_atom1_name],
-                                          'atom2': [bond_atom2_chain, bond_atom2_res, bond_atom2_name]}}
+                    bond_dict = {'bond': {'atom1': [bond_atom1_chain, bond_atom1_res, bond_atom1_name.strip()],
+                                          'atom2': [bond_atom2_chain, bond_atom2_res, bond_atom2_name.strip()],}}
                     if 'constraints' in data_dict:
                         data_dict['constraints'].append(bond_dict)
                     else:
@@ -1407,6 +1409,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                             pocket_max_distance, affinity_binder,
                                             contact_1_dropdown, contact_1_text,
                                             contact_2_dropdown, contact_2_text,
+                                            contact_max_distance,
                                             template_name_path_dict,
                                             template_name_usage_dict, 
                                             template_name_setting_dict,
