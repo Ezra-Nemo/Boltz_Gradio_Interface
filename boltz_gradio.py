@@ -606,7 +606,9 @@ def get_molstar_html(mmcif_base64):
                     <script>
                         (async function() {{
                             const viewer = new rcsbMolstar.Viewer("protein-viewer",
-                            {{"layoutIsExpanded": true}});
+                            {{layoutIsExpanded: true,
+                              layoutShowControls: false,
+                              viewportShowExpand: true,}});
                             
                             const mmcifData = "{mmcif_base64}";
                             const blob = new Blob(
