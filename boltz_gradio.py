@@ -1,4 +1,4 @@
-import os, re, uuid, json, torch, base64, shutil, zipfile, tempfile, subprocess, threading
+import os, re, uuid, json, time, torch, base64, shutil, zipfile, tempfile, subprocess, threading
 import numpy as np
 import gradio as gr
 import pandas as pd
@@ -199,7 +199,9 @@ def add_current_single_to_batch(name: str, yaml_str: str, curr_yaml_dict: dict, 
             new_name = f'{name}_{i}'
         name = new_name
     curr_yaml_dict[name] = yaml_str
-    return curr_yaml_dict, curr_cnt + 1
+    yield curr_yaml_dict, curr_cnt + 1, 'Complex added!'
+    time.sleep(2.)
+    yield gr.update(), gr.update(), 'Add to Batch'
 
 def read_tempaltes(files: list[str], old_cif_name_chain_dict: dict,
                    old_cif_name_path_dict: dict, old_usage_dict: dict,
@@ -1235,6 +1237,10 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                            inputs=[entity_menu, chain_name_text,
                                                    sequence_text, chain_res_dict],
                                            outputs=[chain_res_dict, atom1_chain_dropdown, atom2_chain_dropdown])
+                    chain_name_text.input(update_chain_seq_dict,
+                                          inputs=[entity_menu, chain_name_text,
+                                                  sequence_text, chain_res_dict],
+                                          outputs=[chain_res_dict, atom1_chain_dropdown, atom2_chain_dropdown])
                     entity_menu.change(update_chain_seq_dict,
                                        inputs=[entity_menu, chain_name_text,
                                                sequence_text, chain_res_dict],
@@ -1250,12 +1256,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                    outputs=[pocket_binder, affinity_binder,
                                             contact_1_dropdown, contact_2_dropdown,
                                             target_chain_ids])
-                # chain_input.input(update_all_chains_dropdown,
-                #                   inputs=chain_components,
-                #                   outputs=[pocket_binder, affinity_binder,
-                #                            contact_1_dropdown, contact_2_dropdown,
-                #                            target_chain_ids, atom1_chain_dropdown,
-                #                            atom2_chain_dropdown])
+                chain_input.input(update_all_chains_dropdown,
+                                  inputs=chain_components,
+                                  outputs=[pocket_binder, affinity_binder,
+                                           contact_1_dropdown, contact_2_dropdown,
+                                           target_chain_ids])
             
             def write_yaml_func(binder, target, pocket_max_d, aff_binder,
                                 cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist,
@@ -1496,7 +1501,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         add_single_to_bacth_button.click(add_current_single_to_batch,
                                          inputs=[single_complex_name, yaml_text,
                                                  batch_upload_files, mod_batch_total_files],
-                                         outputs=[batch_upload_files, mod_batch_total_files])
+                                         outputs=[batch_upload_files, mod_batch_total_files, add_single_to_bacth_button])
         update_total_files_cnt.click(cleanup_upload,
                                      outputs=[upload_yaml_files])
         clear_batch_button.click(clear_curr_batch_dict,
