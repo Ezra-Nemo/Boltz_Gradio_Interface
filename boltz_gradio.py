@@ -985,7 +985,7 @@ def zip_selected_files(all_files_and_dirs: list, zipname_pth_map: dict):
     max_f_cnt_len = len(str(len(final_files)))
     yield f'{0:{max_f_cnt_len}}/{len(final_files)}', gr.update(), gr.update()
     c = 0
-    with zipfile.ZipFile(zipped_file, 'w', zipfile.ZIP_DEFLATED) as zip_f:
+    with zipfile.ZipFile(zipped_file, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zip_f:
         for file in final_files:
             zip_f.write(file, os.path.relpath(file, output_dir))
             c += 1
@@ -1005,7 +1005,7 @@ def zip_selected_option_files(names: list, name_pth_map: dict, zipname_pth_map: 
     max_f_cnt_len = len(str(len(final_files)))
     yield f'{0:{max_f_cnt_len}}/{len(final_files)}', gr.update(), gr.update()
     c = 0
-    with zipfile.ZipFile(zipped_file, 'w', zipfile.ZIP_DEFLATED) as zip_f:
+    with zipfile.ZipFile(zipped_file, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zip_f:
         for file in final_files:
             zip_f.write(file, os.path.relpath(file, output_dir))
             c += 1

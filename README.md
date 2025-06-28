@@ -19,7 +19,7 @@ The interface will start and provide a local URL in the terminal!
 
 ## Hugging Face Demo
 
-Try the live demo on Hugging Face Spaces:  
+Try the live demo on Hugging Face Spaces:
 [HF Link](https://huggingface.co/spaces/Cpt-Nemo/Boltz_Interface)
 
 ## Google Colab Demo
