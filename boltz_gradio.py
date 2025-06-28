@@ -2204,5 +2204,12 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         return old_dict, gr.update(choices=list(old_dict)), gr.update(choices=list(old_dict))
 
 
-threading.Thread(target=concurrent_download_model_weight, daemon=True).start()
-Interface.launch(server_name="0.0.0.0", server_port=7860)
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Launch Boltz Gradio interface")
+    parser.add_argument("--share", action="store_true", help="Enable Gradio sharing (share=True)")
+    args = parser.parse_args()
+    
+    threading.Thread(target=concurrent_download_model_weight, daemon=True).start()
+    Interface.launch(server_name="0.0.0.0", server_port=7860, share=args.share)
