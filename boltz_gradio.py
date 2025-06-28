@@ -1,4 +1,4 @@
-import os, re, uuid, json, time, torch, base64, shutil, zipfile, tempfile, subprocess, threading
+import os, re, uuid, json, time, torch, base64, shutil, zipfile, requests, tempfile, subprocess, threading
 import numpy as np
 import gradio as gr
 import pandas as pd
@@ -12,6 +12,8 @@ from pathlib import Path
 
 from boltz.main import download_boltz2
 from boltz.data import const
+
+from gemmi import cif   # type: ignore
 
 # TODO: Convert AF3/Chai-1/Protenix JSON to Boltz YAML
 
@@ -604,13 +606,14 @@ def get_molstar_html(mmcif_base64):
                     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.css">
                 </head>
                 <body>
-                    <div id="protein-viewer" style="width: 1200px; height: 400px; position: center"></div>
+                    <div id="Viewer" style="width: 1200px; height: 400px; position: center"></div>
                     <script>
                         (async function() {{
-                            const viewer = new rcsbMolstar.Viewer("protein-viewer",
+                            const viewer = new rcsbMolstar.Viewer("Viewer",
                             {{layoutIsExpanded: true,
                               layoutShowControls: false,
-                              viewportShowExpand: true,}});
+                              viewportShowExpand: true,
+                              showWelcomeToast: false}});
                             
                             const mmcifData = "{mmcif_base64}";
                             const blob = new Blob(
@@ -723,6 +726,9 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
         mdl_strs = f.read()
     cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
     
+    yield (get_molstar_html(cif_base64), gr.update(''), gr.update(''),
+           gr.update(''), gr.update(''), gr.update(''), gr.update(''), gr.update(''))
+    
     length_split = [0]
     chain_entity_map = {}
     last_res, last_c, i = None, None, 0
@@ -787,7 +793,7 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
                             xaxis=dict(title=dict(text='Residue')),
                             yaxis=dict(title=dict(text='pLDDT')),
                             template='simple_white')
-    return (get_molstar_html(cif_base64), overall_conf, chain_conf,
+    yield (gr.update(), overall_conf, chain_conf,
             gr.DataFrame(value=pair_chain_conf,
                          headers=[f'{i+1}' for i in range(len(chain_conf))],
                          show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
@@ -1081,6 +1087,59 @@ def reverse_complementary_nucleic_acid(inp_na: str, type: str):
             type = 'DNA'
     mapping_dict = rev_comp_map[type]
     return ''.join(mapping_dict[c] for c in inp_na[::-1])
+
+def get_ligand_molstar_html(ccd_id: str):
+    return f"""
+    <iframe
+        id="molstar_frame"
+        style="width: 100%; height: 600px; border: none;"
+        srcdoc='
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <script src="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.js"></script>
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.css">
+                </head>
+                <body>
+                    <div id="Viewer" style="width: 400px; height: 400px; position: center"></div>
+                    <script>
+                        (async function() {{
+                            const viewer = new rcsbMolstar.LigandViewer("Viewer",
+                            {{showWelcomeToast: false,
+                              layoutShowControls: false}});
+                            
+                            const ccdID = "{ccd_id}";
+
+                            try {{
+                                await viewer.loadLigandId(ccdID);
+                            }} catch (error) {{
+                                console.error("Error loading structure:", error);
+                            }}
+                      }})();
+                    </script>
+                </body>
+            </html>
+        '>
+    </iframe>"""
+
+def draw_mol_3d(ccd_id: str):
+    ccd_id = ccd_id.upper()
+    yield get_ligand_molstar_html(ccd_id), pd.DataFrame()
+    cif_url = f'https://files.rcsb.org/ligands/download/{ccd_id}.cif'
+    result = requests.get(cif_url)
+    if result.status_code == 404:
+        yield get_ligand_molstar_html(''), pd.DataFrame()
+    
+    data = cif.read_string(result.text)[ccd_id]
+    chem_descriptor_prefix = '_pdbx_chem_comp_descriptor'
+    looped_name = ['type', 'program', 'descriptor']
+    data_dict = {}
+    
+    for name in looped_name:
+        loop = data.find_values(f'{chem_descriptor_prefix}.{name}')
+        data_dict[name.capitalize()] = [i.replace('"', '') for i in list(loop)]
+    
+    yield gr.update(), pd.DataFrame(data_dict)
 
 ### Boltz Interface ###
 with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
@@ -2146,7 +2205,14 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                 inputs=[utility_tabular_file,
                                                         utility_custom_delimiter_dropdown],
                                                 outputs=utility_tabular_df)
-            
+        
+        with gr.Accordion('Show CCD Ligand', open=False):
+            ccd_3d_ligand = gr.Text(label='CCD ID', interactive=True, info='Press Enter to submit')
+            ccd_3d_viewer = gr.HTML(get_ligand_molstar_html(''))
+            ccd_3d_info = gr.DataFrame(pd.DataFrame, headers=['Type', 'Program', 'Descriptor'], interactive=True)
+            ccd_3d_ligand.submit(draw_mol_3d, inputs=ccd_3d_ligand,
+                                 outputs=[ccd_3d_viewer, ccd_3d_info])
+    
     
     #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####    
     def change_sequence_label(curr_entity: str, sequence: str, cyclic_ckbox: bool):
