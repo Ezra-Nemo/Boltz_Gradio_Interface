@@ -1175,7 +1175,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 entity, chain = all_entity_chain_values[i:i+2]
                 chains = [c.strip() for c in chain.split(',') if c.strip()]
                 all_chains.update(chains)
-                if entity in ['Ligand' or 'CCD']:
+                if entity in ['Ligand', 'CCD']:
                     affinity_chains.update(chains)
             final_choices = [''] + sorted(all_chains)
             aff_final = [''] + sorted(affinity_chains)
