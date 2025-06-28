@@ -20,4 +20,9 @@ The interface will start and provide a local URL in the terminal!
 ## Hugging Face Demo
 
 Try the live demo on Hugging Face Spaces:  
-[Link](https://huggingface.co/spaces/Cpt-Nemo/Boltz_Interface)
+[HF Link](https://huggingface.co/spaces/Cpt-Nemo/Boltz_Interface)
+
+## Google Colab Demo
+
+Try the demo on Google Colab:
+[Colab Link](https://colab.research.google.com/github/Ezra-Nemo/Boltz_Gradio_Interface/blob/main/Boltz_Interface_Colab.ipynb?hl=zh-tw)
