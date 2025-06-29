@@ -509,31 +509,28 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         yield gr.update(value='Predicting...', interactive=False), full_output
     curr_running_process.stdout.close()
     curr_running_process.wait()
-    full_output += 'Prediction Done! Processing ligand to SDF format...\n'
+    full_output += 'Prediction Done. Processing ligand to SDF format...\n'
     
     out_pred_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{random_dir_name}', 'predictions'))
     dir_smiles_dict = {}
     for _, row in all_ligands.iterrows():
         name, smiles = row['Name'], row['SMILES']
-        dir_smiles_dict[out_pred_dir / f'{file_prefix}_{name}'] = smiles
+        dir_smiles_dict[out_pred_dir / f'{name}'] = smiles
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(_recover_dir_molecule, cif_dir, smiles, ligand_chain) for 
                    cif_dir, smiles in dir_smiles_dict.items()]
         total = len(futures)
         n = 0
-        errors = ''
         progress_text = f'SDF Format Conversion Progress: {n} / {total}'
         yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
         for f in as_completed(futures):
             err = f.result()
-            if err:
-                errors += err
             n += 1
             progress_text = f'SDF Format Conversion Progress: {n} / {total}'
-            yield gr.update(value='Predicting...', interactive=False), full_output + errors + progress_text
+            yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
             
-    progress_text += '\n'
-    yield gr.update(value='Run vHTS', interactive=True), full_output + errors + progress_text
+    progress_text += '\nvHTS done!'
+    yield gr.update(value='Run vHTS', interactive=True), full_output + progress_text
 
 ### vHTS ###
 def update_chem_file_format(chem_type: str):
