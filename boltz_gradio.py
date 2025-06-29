@@ -1,4 +1,5 @@
-import os, re, uuid, json, time, torch, base64, shutil, zipfile, requests, tempfile, subprocess, threading
+import os, io, re, uuid, json, time, torch, base64
+import shutil, zipfile, requests, tempfile, subprocess, threading, contextlib
 import numpy as np
 import gradio as gr
 import pandas as pd
@@ -6,18 +7,26 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from yaml import safe_dump, safe_load
-from rdkit import Chem
-from rdkit import RDLogger
+from rdkit import Chem, RDLogger
+from rdkit.Chem import AllChem, Descriptors
+from rdkit.Contrib.SA_Score import sascorer # type: ignore
+from rdkit.Contrib.NP_Score import npscorer # type: ignore
 from pathlib import Path
 
 from boltz.main import download_boltz2
 from boltz.data import const
 
+from concurrent.futures import ThreadPoolExecutor
+
+from functools import partial
+
 from gemmi import cif   # type: ignore
 
 # TODO: Convert AF3/Chai-1/Protenix JSON to Boltz YAML
 
-RDLogger.DisableLog('rdApp.*') 
+RDLogger.DisableLog('rdApp.*')
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    fscore = npscorer.readNPModel()
 
 entity_types = ['Protein', 'DNA', 'RNA', 'Ligand', 'CCD']
 entity_label_map = {'Protein': 'Sequence', 'DNA': 'Sequence', 'RNA': 'Sequence',
@@ -29,6 +38,21 @@ allow_char_dict = {'Protein': "ACDEFGHIKLMNPQRSTVWY",
 
 rev_comp_map = {'DNA': {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C', 'U': 'A'},
                 'RNA': {'A': 'U', 'U': 'A', 'C': 'G', 'G': 'C', 'T': 'A'}}
+
+property_functions = {'Molecular Weight'  : Descriptors.MolWt,
+                      'Num. of Hydrogen Bond Donors' : Descriptors.NumHDonors,
+                      'Num. of Hydrogen Bond Acceptors' : Descriptors.NumHAcceptors,
+                      'LogP': Descriptors.MolLogP,
+                      'Topological Polar Surface Area (TPSA)': Descriptors.TPSA,
+                      'Rotatable Bonds'  : Descriptors.NumRotatableBonds,
+                      'Num. of Rings' : Descriptors.RingCount,
+                      'Formal Charge'  : lambda mol: sum([atom.GetFormalCharge() for atom in mol.GetAtoms()]),
+                      'Num. of Heavy Atoms' : Descriptors.HeavyAtomCount,
+                      'Num. of Atoms'  : lambda mol: mol.GetNumAtoms(),
+                      'Molar Refractivity'  : Descriptors.MolMR,
+                      'Quantitative Estimate of Drug-Likeness (QED)' : Descriptors.qed,
+                      'Natural Product-likeness Score (NP)': partial(npscorer.scoreMol, fscore=fscore),
+                      'Synthetic Accessibility Score (SA)': sascorer.calculateScore}
 
 css = """
 footer { display: none !important; }
@@ -175,9 +199,6 @@ def check_batch_yaml_and_name(yaml_str: str, name_str: str):
         validity_text += 'Invalid yaml file.'
     return gr.update(info=validity_text)
 
-def cleanup_upload():
-    return None
-
 def clear_curr_batch_dict():
     return {}, 0
 
@@ -189,8 +210,9 @@ def upload_multi_files(files: list[str], curr_cnt: int):
             yaml_str = f.read()
             if _check_yaml_strings(yaml_str):
                 final_yaml_dict[base_name] = yaml_str
+        os.remove(file)
     curr_cnt += len(final_yaml_dict)
-    return final_yaml_dict, curr_cnt
+    return final_yaml_dict, curr_cnt, None
 
 def add_current_single_to_batch(name: str, yaml_str: str, curr_yaml_dict: dict, curr_cnt: int):
     if name in curr_yaml_dict:
@@ -1070,6 +1092,26 @@ def update_file_tree_and_dropdown():
     return file_explorer, gr.update(choices=list(name_path_map)), name_path_map
 
 ### Utilities ###
+def rdkit_embed_molecule(lig):
+    try:
+        report = AllChem.EmbedMolecule(lig, useRandomCoords=True)
+        if report == -1:
+            return None
+        else:
+            return lig
+    except Exception as e:
+        return None
+
+def rdkit_embed_with_timeout(lig, timeout):
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(rdkit_embed_molecule, lig)
+        try:
+            result = future.result(timeout=timeout)
+            return result
+        except Exception as e:
+            future.cancel()
+            return None
+
 def reverse_complementary_nucleic_acid(inp_na: str, type: str):
     if not inp_na.strip():
         return ''
@@ -1092,7 +1134,7 @@ def get_ligand_molstar_html(ccd_id: str):
     return f"""
     <iframe
         id="molstar_frame"
-        style="width: 100%; height: 600px; border: none;"
+        style="width: 100%; height: 400px; border: none;"
         srcdoc='
             <!DOCTYPE html>
             <html>
@@ -1101,7 +1143,7 @@ def get_ligand_molstar_html(ccd_id: str):
                     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.css">
                 </head>
                 <body>
-                    <div id="Viewer" style="width: 400px; height: 400px; position: center"></div>
+                    <div id="Viewer" style="width: 300px; height: 300px; position: center"></div>
                     <script>
                         (async function() {{
                             const viewer = new rcsbMolstar.LigandViewer("Viewer",
@@ -1122,7 +1164,41 @@ def get_ligand_molstar_html(ccd_id: str):
         '>
     </iframe>"""
 
-def draw_mol_3d(ccd_id: str):
+def get_mol_molstar_html(mol_str: str):
+    mol_js_string = json.dumps(mol_str)
+    return f"""
+    <iframe
+        style="width: 100%; height: 400px; border: none;"
+        srcdoc='
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <script src="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.js"></script>
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.css">
+            </head>
+            <body>
+                <div id="Viewer" style="width: 100%; height: 100%;"></div>
+                <script>
+                    (async function() {{
+                        const viewer = new rcsbMolstar.Viewer("Viewer", {{
+                            showWelcomeToast: false,
+                            layoutShowControls: false
+                        }});
+                        try {{
+                            await viewer.loadStructureFromData({mol_js_string}, "mol", false);
+                            viewer.plugin.managers.interactivity.setProps({{ granularity: "element" }});
+                        }} catch (err) {{
+                            console.error("Mol* load error:", err);
+                        }}
+                    }})();
+                </script>
+            </body>
+            </html>
+        '>
+    </iframe>
+    """
+
+def draw_ccd_mol_3d(ccd_id: str):
     ccd_id = ccd_id.upper()
     yield get_ligand_molstar_html(ccd_id), pd.DataFrame()
     cif_url = f'https://files.rcsb.org/ligands/download/{ccd_id}.cif'
@@ -1140,6 +1216,28 @@ def draw_mol_3d(ccd_id: str):
         data_dict[name.capitalize()] = [i.replace('"', '') for i in list(loop)]
     
     yield gr.update(), pd.DataFrame(data_dict)
+
+def draw_smiles_3d(smiles_str: str):
+    mol = Chem.MolFromSmiles(smiles_str)
+    if mol is None:
+        yield get_mol_molstar_html(''), gr.update(value=pd.DataFrame({'Property': ['Error'],
+                                                                      'Value': ['Invalid Molecule!']}))
+    else:
+        mol = Chem.AddHs(mol)
+        data_dict = {'Property': list(property_functions), 'Value': []}
+        for func in property_functions.values():
+            v = func(mol)
+            if isinstance(v, float):
+                v = round(v, 4)
+            data_dict['Value'].append(v)
+        yield get_mol_molstar_html(''), gr.update(value=pd.DataFrame(data_dict))
+        new_mol = rdkit_embed_with_timeout(mol, 60)
+        if new_mol is None:
+            mol = Chem.RemoveHs(mol)    # If embedding failed / timeout, just use 2D coord
+        else:
+            mol = Chem.RemoveHs(new_mol)
+        mol_str = Chem.MolToMolBlock(mol)
+        yield get_mol_molstar_html(mol_str), gr.update()
 
 ### Boltz Interface ###
 with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
@@ -1216,7 +1314,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                         interactive=True, minimum=1)
         
         with gr.Row():
-            with gr.Column(min_width=150):
+            with gr.Column():
                 gr.Markdown('<span style="font-size:15px; font-weight:bold;">Name, Affinity & Entities</span>')
                 single_complex_name = gr.Text(label='Name',
                                               placeholder='Complex_1',
@@ -1225,8 +1323,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                               interactive=True)
                 mod_entity_number = gr.Number(1, label='Total Entity',
                                               interactive=True, minimum=1, step=1)
-            
-            
+        
+        
         def update_all_chains_dropdown(*all_entity_chain_values):
             all_chains = set()
             affinity_chains = set()
@@ -1289,7 +1387,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     entity_menu.change(change_sequence_label,
                                        inputs=[entity_menu, sequence_text, cyclic_ckbox],
                                        outputs=[sequence_text, highlight_text, cyclic_ckbox])
-                    sequence_text.input(validate_sequence,
+                    sequence_text.change(validate_sequence,
                                         inputs=[entity_menu, sequence_text],
                                         outputs=[highlight_text])
                     chain_name_text.submit(update_chain_seq_dict,
@@ -1308,8 +1406,10 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 gr.HTML("<hr>")
             
             chain_components = [comp for i, comp in enumerate(component_refs) if i % 6 <= 1]
+            entity_components = [comp for i, comp in enumerate(component_refs) if i % 6 == 0]
             for i in range(0, len(chain_components), 2):
                 chain_input = chain_components[i+1]
+                entity_menu = entity_components[i//2]
                 chain_input.submit(update_all_chains_dropdown,
                                    inputs=chain_components,
                                    outputs=[pocket_binder, affinity_binder,
@@ -1320,6 +1420,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                   outputs=[pocket_binder, affinity_binder,
                                            contact_1_dropdown, contact_2_dropdown,
                                            target_chain_ids])
+                entity_menu.change(update_all_chains_dropdown,
+                                   inputs=chain_components,
+                                   outputs=[pocket_binder, affinity_binder,
+                                            contact_1_dropdown, contact_2_dropdown,
+                                            target_chain_ids])
             
             def write_yaml_func(binder, target, pocket_max_d, aff_binder,
                                 cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist,
@@ -1426,13 +1531,15 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         return f'Entity {i//5+1} is empty!'
                     if entity == 'CCD':
                         seq_key = 'ccd'
-                        if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', seq):
+                        seq = seq.upper()
+                        if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})|[A-Z]{2}', seq):
                             return f'Entity {i//5+1} is not a valid CCD ID!'
                     elif entity == 'Ligand':
                         seq_key = 'smiles'
                         if Chem.MolFromSmiles(seq) is None:
                             return f'Entity {i//5+1} is not a valid SMILES!'
                     else:
+                        seq = seq.upper()
                         seq_key = 'sequence'
                         valid_strs = allow_char_dict[entity]
                         for char in seq:
@@ -1446,8 +1553,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         for pos_ccd in all_mods:
                             if ':' not in pos_ccd:
                                 return (f'Invalid modification for Entity {i//6+1}, please use ":" to '
-                                        f'separate residue and CCD!\n'
-                                        f'E.g., 2:NAG,15:MAN')
+                                        f'separate residue and CCD!\n')
                             pos, ccd = pos_ccd.split(':')
                             modifications.append({'position': int(pos), 'ccd': ccd})
                     else:
@@ -1497,9 +1603,6 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                 language='yaml',
                                 interactive=True, max_lines=15)
         
-        # single_boltz_log = Log(log_file, dark=True,
-        #                        label='Prediction Log',
-        #                        xterm_font_size=12, height=300)
         single_boltz_log = gr.Textbox(label='Prediction Log', lines=10, max_lines=10,
                                       autofocus=False, elem_classes='log')
         
@@ -1548,7 +1651,6 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 mod_batch_total_files = gr.Number(0, label='Total Files',
                                                   scale=1, interactive=True,
                                                   minimum=0, step=1)
-                update_total_files_cnt = gr.Button('Update', scale=1)
                 clear_batch_button = gr.Button('Clear')
             upload_yaml_files = gr.Files(file_types=['.yaml', '.yml'],
                                          label='Upload YAML files',
@@ -1556,18 +1658,17 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         
         upload_yaml_files.upload(upload_multi_files,
                                  inputs=[upload_yaml_files, mod_batch_total_files],
-                                 outputs=[batch_upload_files, mod_batch_total_files])
+                                 outputs=[batch_upload_files, mod_batch_total_files, upload_yaml_files])
         add_single_to_bacth_button.click(add_current_single_to_batch,
                                          inputs=[single_complex_name, yaml_text,
                                                  batch_upload_files, mod_batch_total_files],
-                                         outputs=[batch_upload_files, mod_batch_total_files, add_single_to_bacth_button])
-        update_total_files_cnt.click(cleanup_upload,
-                                     outputs=[upload_yaml_files])
+                                         outputs=[batch_upload_files, mod_batch_total_files,
+                                                  add_single_to_bacth_button])
         clear_batch_button.click(clear_curr_batch_dict,
                                  outputs=[batch_upload_files, mod_batch_total_files])
         
         @gr.render(inputs=[batch_upload_files, mod_batch_total_files],
-                   triggers=[update_total_files_cnt.click, clear_batch_button.click])
+                   triggers=[clear_batch_button.click, mod_batch_total_files.change])
         def create_new_batch_file_count(all_uploaded_files: dict, counts: int):
             batched_files = []
             total_uploaded = len(all_uploaded_files)
@@ -1604,6 +1705,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 yaml_str_code.input(check_batch_yaml_and_name,
                                     inputs=[yaml_str_code, file_name_text],
                                     outputs=file_name_text)
+                
+                gr.HTML("<hr>")
             
             def process_all_files(*all_components):
                 all_components = list(all_components)
@@ -1700,7 +1803,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                                 multiselect=True, interactive=True)
                         vhts_template_chain_ids = gr.Dropdown(label='Template Chain IDs',
                                                                 multiselect=True, interactive=True)
-            with gr.Row(equal_height=True):
+            with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket Conditioning & Entity Count</span>')
                     vhts_pocket_text = gr.Text(label='Target Pockets',
@@ -1776,17 +1879,22 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         entity_menu.change(change_sequence_label,
                                            inputs=[entity_menu, sequence_text, cyclic_ckbox],
                                            outputs=[sequence_text, highlight_text, cyclic_ckbox])
-                        sequence_text.input(validate_sequence,
-                                            inputs=[entity_menu, sequence_text],
-                                            outputs=highlight_text)
+                        sequence_text.change(validate_sequence,
+                                             inputs=[entity_menu, sequence_text],
+                                             outputs=highlight_text)
                 
                     gr.HTML("<hr>")
                 chain_components = [comp for i, comp in enumerate(component_refs) if i % 5 == 1]
-                for chain_input in chain_components:
+                entity_components = [comp for i, comp in enumerate(component_refs) if i % 5 == 0]
+                for i, chain_input in enumerate(chain_components):
                     chain_input.submit(vhts_update_all_chains_dropdown,
                                        inputs=chain_components,
                                        outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
                                                 vhts_target_chain_ids])
+                    entity_components[i].change(vhts_update_all_chains_dropdown,
+                                                inputs=chain_components,
+                                                outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
+                                                         vhts_target_chain_ids])
                 
                 def write_yaml_func(binder, target, pocket_max_d, aff_binder,
                                     cont_1_c, cont_1_r, cont_2_c, cont_2_r,
@@ -1869,14 +1977,16 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         if not seq:
                             return f'Entity {i//5+1} is empty!'
                         if entity == 'CCD':
+                            seq = seq.upper()
                             seq_key = 'ccd'
-                            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', seq):
+                            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5}|[A-Z]{2})', seq):
                                 return f'Entity {i//5+1} is not a valid CCD ID!'
                         elif entity == 'Ligand':
                             seq_key = 'smiles'
                             if Chem.MolFromSmiles(seq) is None:
                                 return f'Entity {i//5+1} is not a valid SMILES!'
                         else:
+                            seq = seq.upper()
                             seq_key = 'sequence'
                             valid_strs = allow_char_dict[entity]
                             for char in seq:
@@ -1890,8 +2000,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                             for pos_ccd in all_mods:
                                 if ':' not in pos_ccd:
                                     return (f'Invalid modification for Entity {i//5+1}, please use ":" to '
-                                            f'separate residue and CCD!\n'
-                                            f'E.g., 2:NAG,15:MAN')
+                                            f'separate residue and CCD!\n')
                                 pos, ccd = pos_ccd.split(':')
                                 modifications.append({'position': int(pos), 'ccd': ccd})
                         else:
@@ -1932,7 +2041,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     vhts_complex_prefix = gr.Text(label='Prefix',
                                                   info=('A prefix that will be added to the output directory '
                                                         '(quote not included)'),
-                                                  placeholder='"Protease"_', interactive=True)
+                                                  placeholder='"Protein"_', interactive=True)
                     vhts_process_file_demo_button = gr.Button('Write Demo YAML')
                     vhts_start_predict_button = gr.Button('Run vHTS', interactive=False)
                 vhts_yaml_demo_text = gr.Code(label='Demo YAML output',
@@ -2206,12 +2315,22 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                         utility_custom_delimiter_dropdown],
                                                 outputs=utility_tabular_df)
         
-        with gr.Accordion('Show CCD Ligand', open=False):
+        with gr.Accordion('Display CCD Ligand', open=False):
             ccd_3d_ligand = gr.Text(label='CCD ID', interactive=True, info='Press Enter to submit')
-            ccd_3d_viewer = gr.HTML(get_ligand_molstar_html(''))
-            ccd_3d_info = gr.DataFrame(pd.DataFrame, headers=['Type', 'Program', 'Descriptor'], interactive=True)
-            ccd_3d_ligand.submit(draw_mol_3d, inputs=ccd_3d_ligand,
+            with gr.Row():
+                ccd_3d_viewer = gr.HTML(get_ligand_molstar_html(''))
+                ccd_3d_info = gr.DataFrame(pd.DataFrame, headers=['Type', 'Program', 'Descriptor'])
+            ccd_3d_ligand.submit(draw_ccd_mol_3d, inputs=ccd_3d_ligand,
                                  outputs=[ccd_3d_viewer, ccd_3d_info])
+            
+        with gr.Accordion('Display SMILES Ligand', open=False):
+            smiles_3d_ligand = gr.Text(label='SMILES', interactive=True, info='Press Enter to submit')
+            with gr.Row():
+                smiles_3d_viewer = gr.HTML(get_ligand_molstar_html(''))
+                smiles_3d_info = gr.DataFrame(pd.DataFrame, headers=['Property', 'Value'],
+                                              column_widths=['80%', '20%'])
+            smiles_3d_ligand.submit(draw_smiles_3d, inputs=smiles_3d_ligand,
+                                    outputs=[smiles_3d_viewer, smiles_3d_info])
     
     
     #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####    
@@ -2223,6 +2342,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                           value=False if not cyclic_ckbox_bool else cyclic_ckbox),)
     
     def validate_sequence(entity_type: str, sequence: str):
+        sequence = sequence.strip()
         if not sequence:
             return [('Input required!', "X")]
         if entity_type in ["Protein", "DNA", "RNA"]:
@@ -2245,20 +2365,24 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         prev_invalid = False
                     else:
                         labeled_sequence[-1][0] += char
+            if len(labeled_sequence) == 1 and prev_valid:
+                labeled_sequence = [('Valid', "✓")]
                     
         elif entity_type == "Ligand":
             mol = Chem.MolFromSmiles(sequence)
             if mol is None:
                 labeled_sequence = [(sequence, "X")]
             else:
-                labeled_sequence = [(sequence, "✓")]
+                # labeled_sequence = [(sequence, "✓")]
+                labeled_sequence = [('Valid', "✓")]
         
         elif entity_type == 'CCD':
-            sequence = sequence.upper()
-            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})', sequence):
+            sequence = sequence.upper().strip()
+            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})|[A-Z]{2}', sequence):
                 labeled_sequence = [(sequence, "X")]
             else:
-                labeled_sequence = [(sequence, "✓")]
+                # labeled_sequence = [(sequence, "✓")]
+                labeled_sequence = [('Valid', "✓")]
                 
         return labeled_sequence
     
