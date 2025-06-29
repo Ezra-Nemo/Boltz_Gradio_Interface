@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from yaml import safe_dump, safe_load
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem, Descriptors
+from rdkit.Geometry import Point3D
+from rdkit.Chem.rdDetermineBonds import DetermineConnectivity
 from rdkit.Contrib.SA_Score import sascorer # type: ignore
 from rdkit.Contrib.NP_Score import npscorer # type: ignore
 from pathlib import Path
@@ -16,7 +18,7 @@ from pathlib import Path
 from boltz.main import download_boltz2
 from boltz.data import const
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from functools import partial
 
@@ -27,6 +29,8 @@ from gemmi import cif   # type: ignore
 RDLogger.DisableLog('rdApp.*')
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     fscore = npscorer.readNPModel()
+
+periodic_table = Chem.GetPeriodicTable()
 
 entity_types = ['Protein', 'DNA', 'RNA', 'Ligand', 'CCD']
 entity_label_map = {'Protein': 'Sequence', 'DNA': 'Sequence', 'RNA': 'Sequence',
@@ -433,8 +437,9 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         final_strs.append('--affinity_mw_correction')
     if no_trifast:
         final_strs.append('--no_trifast')
-    if override:
-        final_strs.append('--override')
+    # Never override for vHTS
+    # if override:
+    #     final_strs.append('--override')
     cmd = ['boltz', 'predict', inp_rng_dir,
            '--out_dir', out_rng_dir,
            '--devices', str(devices),
@@ -504,8 +509,27 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         yield gr.update(value='Predicting...', interactive=False), full_output
     curr_running_process.stdout.close()
     curr_running_process.wait()
-    full_output += 'Prediction Done!\n'
-    yield gr.update(value='Run vHTS', interactive=True), full_output
+    full_output += 'Prediction Done! Processing ligand to SDF format...\n'
+    
+    out_pred_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{random_dir_name}', 'predictions'))
+    dir_smiles_dict = {}
+    for _, row in all_ligands.iterrows():
+        name, smiles = row['Name'], row['SMILES']
+        dir_smiles_dict[out_pred_dir / f'{file_prefix}_{name}'] = smiles
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(_recover_dir_molecule, cif_dir, smiles, ligand_chain) for 
+                   cif_dir, smiles in dir_smiles_dict.items()]
+        total = len(futures)
+        n = 0
+        progress_text = f'SDF Format Conversion Progress: {n} / {total}'
+        yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
+        for f in as_completed(futures):
+            n += 1
+            progress_text = f'SDF Format Conversion Progress: {n} / {total}'
+            yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
+            
+    progress_text += '\n'
+    yield gr.update(value='Run vHTS', interactive=True), full_output + progress_text
 
 ### vHTS ###
 def update_chem_file_format(chem_type: str):
@@ -613,6 +637,71 @@ def process_uploaded_ligand(chem_files: list[str], name_col: str,
             name = new_name
         final_names.append(name)
     return pd.DataFrame({'Name': final_names, 'SMILES': final_smiles})
+
+def __extract_ligand_coord(cif_pth: str, lig_chain: str):
+    p_map = {'Chain': 0, 'Atom': 0, 'X': 0, 'Y': 0, 'Z': 0}
+    atom_coord_info = []
+    
+    n = -1
+    with open(cif_pth) as f:
+        for l in f:
+            if l.startswith('_atom_site.'):
+                n += 1
+            if l.startswith('_atom_site.auth_asym_id'):
+                p_map['Chain'] = n
+            elif l.startswith('_atom_site.type_symbol'):
+                p_map['Atom'] = n
+            elif l.startswith('_atom_site.Cartn_x'):
+                p_map['X'] = n
+            elif l.startswith('_atom_site.Cartn_y'):
+                p_map['Y'] = n
+            elif l.startswith('_atom_site.Cartn_z'):
+                p_map['Z'] = n
+            
+            if l.startswith('HETATM'):
+                line_splitted = l.split()
+                if line_splitted[p_map['Chain']] == lig_chain:
+                    a, x, y, z = line_splitted[p_map['Atom']], line_splitted[p_map['X']], \
+                        line_splitted[p_map['Y']], line_splitted[p_map['Z']]
+                    a = Chem.Atom(periodic_table.GetAtomicNumber(a))
+                    atom_coord_info.append((a, Point3D(float(x), float(y), float(z))))
+            if atom_coord_info and l.startswith('#'):
+                break
+    return atom_coord_info
+
+def __reconstruct_mol_from_data(mol_data: list[tuple]):
+    mol = Chem.EditableMol(Chem.Mol())
+    conf = Chem.Conformer(len(mol_data))
+    fc = 0
+    for i, data in enumerate(mol_data):
+        atom, coord = data
+        mol.AddAtom(atom)
+        conf.SetAtomPosition(i, coord)
+        fc += atom.GetFormalCharge()
+    mol = mol.GetMol()
+    mol.AddConformer(conf)
+    DetermineConnectivity(mol)
+    return mol
+
+def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
+    ref_mol = Chem.MolFromSmiles(smiles)
+    for f in os.listdir(cif_dir):
+        if f.endswith('.cif'):
+            try:
+                data = __extract_ligand_coord(os.path.join(cif_dir, f), ligand_chain)
+                coord_mol = __reconstruct_mol_from_data(data)
+                final_mol = AllChem.AssignBondOrdersFromTemplate(ref_mol, coord_mol)
+                AllChem.AssignStereochemistryFrom3D(final_mol)
+                for a in final_mol.GetAtoms():
+                    a.SetNumRadicalElectrons(0)
+                name = f.rsplit('.', 1)[0]
+                out_sdf_f = os.path.join(cif_dir, name + '.sdf')
+                final_mol.SetProp('_Name', name)
+                final_mol.SetProp('SMILES', Chem.MolToSmiles(final_mol))
+                with Chem.SDWriter(out_sdf_f) as w:
+                    w.write(final_mol)
+            except:
+                ...
 
 ### Result visulization ###
 def get_molstar_html(mmcif_base64):
