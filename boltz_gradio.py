@@ -521,15 +521,19 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                    cif_dir, smiles in dir_smiles_dict.items()]
         total = len(futures)
         n = 0
+        errors = ''
         progress_text = f'SDF Format Conversion Progress: {n} / {total}'
         yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
         for f in as_completed(futures):
+            err = f.result()
+            if err:
+                errors += err
             n += 1
             progress_text = f'SDF Format Conversion Progress: {n} / {total}'
-            yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
+            yield gr.update(value='Predicting...', interactive=False), full_output + errors + progress_text
             
     progress_text += '\n'
-    yield gr.update(value='Run vHTS', interactive=True), full_output + progress_text
+    yield gr.update(value='Run vHTS', interactive=True), full_output + errors + progress_text
 
 ### vHTS ###
 def update_chem_file_format(chem_type: str):
@@ -685,6 +689,7 @@ def __reconstruct_mol_from_data(mol_data: list[tuple]):
 
 def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
     ref_mol = Chem.MolFromSmiles(smiles)
+    errors = ''
     for f in os.listdir(cif_dir):
         if f.endswith('.cif'):
             try:
@@ -700,8 +705,9 @@ def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
                 final_mol.SetProp('SMILES', Chem.MolToSmiles(final_mol))
                 with Chem.SDWriter(out_sdf_f) as w:
                     w.write(final_mol)
-            except:
-                ...
+            except Exception as e:
+                errors += f'{e}\n'
+    return errors
 
 ### Result visulization ###
 def get_molstar_html(mmcif_base64):
@@ -1930,7 +1936,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 component_refs = []
                 for i in range(counts):
                     gr.Markdown(f'<span style="font-size:15px; font-weight:bold;">Entity {i+1}</span>', key=f'MK_{i}')
-                    with gr.Row(key=f'Entity_{i}', equal_height=True):
+                    with gr.Row(key=f'Entity_{i}'):
                         with gr.Column(key=f'Entity_{i}_sub1', scale=1):
                             entity_menu = gr.Dropdown(entity_types,
                                                       label='Entity',
