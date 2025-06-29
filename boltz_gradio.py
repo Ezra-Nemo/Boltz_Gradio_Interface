@@ -488,7 +488,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                 if msa_f.endswith('.csv'):
                     num = msa_f.rsplit('.', 1)[0].rsplit('_', 1)[-1]
                     num_msa_pth_map[int(num)] = os.path.join(msa_dir, msa_f)
-            # Just add the csv path containing the MSA to the "msa" key of template. 
+            # Just add the csv path containing the MSA to the "msa" key of template.
             # Number by the index of list within the "sequences" key!
             for seq_num, seq_info in enumerate(yaml_template_dict['sequences']):
                 if seq_num in num_msa_pth_map:
@@ -521,16 +521,19 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                    cif_dir, smiles in dir_smiles_dict.items()]
         total = len(futures)
         n = 0
+        errors = ''
         progress_text = f'SDF Format Conversion Progress: {n} / {total}'
         yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
         for f in as_completed(futures):
             err = f.result()
+            if err:
+                errors += err
             n += 1
             progress_text = f'SDF Format Conversion Progress: {n} / {total}'
-            yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
+            yield gr.update(value='Predicting...', interactive=False), full_output + errors + progress_text
             
     progress_text += '\nvHTS done!'
-    yield gr.update(value='Run vHTS', interactive=True), full_output + progress_text
+    yield gr.update(value='Run vHTS', interactive=True), full_output + errors + progress_text
 
 ### vHTS ###
 def update_chem_file_format(chem_type: str):
@@ -664,7 +667,7 @@ def __extract_ligand_coord(cif_pth: str, lig_chain: str):
                 if line_splitted[p_map['Chain']] == lig_chain:
                     a, x, y, z = line_splitted[p_map['Atom']], line_splitted[p_map['X']], \
                         line_splitted[p_map['Y']], line_splitted[p_map['Z']]
-                    a = Chem.Atom(periodic_table.GetAtomicNumber(a))
+                    a = Chem.Atom(periodic_table.GetAtomicNumber(a.lower().capitalize()))
                     atom_coord_info.append((a, Point3D(float(x), float(y), float(z))))
             if atom_coord_info and l.startswith('#'):
                 break
