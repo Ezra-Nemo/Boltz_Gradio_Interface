@@ -25,6 +25,8 @@ from functools import partial
 from Bio.PDB.mmcifio import MMCIFIO
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
+from posebusters import PoseBusters
+
 # TODO: Convert AF3/Chai-1/Protenix JSON to Boltz YAML
 
 RDLogger.DisableLog('rdApp.*')
@@ -320,7 +322,7 @@ def _write_cif_dict_to_cif(cif_dict: dict, out_pth: str):
     cif_io.set_dict(cif_dict)
     cif_io.save(str(out_pth))
 
-def combine_and_write_cif(target_files: list, out_pth: str):
+def combine_and_write_cif(target_files: list, out_pth: str|Path):
     _write_cif_dict_to_cif(_combine_cif_models_to_dict(target_files), out_pth)
 
 ### Running Boltz ###
@@ -774,22 +776,31 @@ def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
 def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out_cif: str):
     ref_mol = Chem.MolFromSmiles(smiles)
     errors = ''
+    final_mols = []
     for f in cif_files:
         try:
             data = __extract_ligand_coord(f, ligand_chain)
             coord_mol = __reconstruct_mol_from_data(data)
             final_mol = AllChem.AssignBondOrdersFromTemplate(ref_mol, coord_mol)
             AllChem.AssignStereochemistryFrom3D(final_mol)
-            for a in final_mol.GetAtoms():
-                a.SetNumRadicalElectrons(0)
+            for atom in final_mol.GetAtoms():
+                atom.SetNoImplicit(False)
+                atom.SetNumRadicalElectrons(0)
+            final_mol.UpdatePropertyCache()
+            Chem.SanitizeMol(final_mol)
             name = os.path.basename(f).rsplit('.', 1)[0]
             out_sdf_f = os.path.join(os.path.dirname(f), name + '.sdf')
             final_mol.SetProp('_Name', name)
             final_mol.SetProp('SMILES', Chem.MolToSmiles(final_mol))
             with Chem.SDWriter(out_sdf_f) as w:
                 w.write(final_mol)
+            final_mols.append(final_mol)
         except Exception as e:
             errors += f'{e}\n'
+    buster = PoseBusters('mol')
+    df = buster.bust([final_mols])
+    csv_name = os.path.join(os.path.dirname(f), name.rsplit('_', 2)[0] + '_bust.csv')
+    df.to_csv(csv_name, index=False)
     combine_and_write_cif(cif_files, out_cif)
     return errors
 
@@ -1032,7 +1043,6 @@ def update_general_molstar_only(name: str, rank_name: str, name_rank_f_map: dict
     cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
     
     yield get_general_molstar_html(cif_base64, rank, color)
-    
 
 ### vHTS Processing ###
 def get_vhts_molstar_html(mmcif_base64, mdl_idx, color='plddt-confidence'):
@@ -2397,10 +2407,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
             result_coloring_dropdown = gr.Dropdown(label='Theme',
                                                    info='Coloring theme for structure',
                                                    choices=['chain-id', 'plddt-confidence', 'element-symbol',
-                                                            'entity-id', 'residue-name', 'secondary-structure',
-                                                            'uniform', 'polymer-id', 'polymer-index',
-                                                            'secondary-structure', 'sequence-id', 'structure-index',
-                                                            'atom-id', 'molecule-type'],
+                                                            'entity-id', 'entity-source', 'residue-name',
+                                                            'secondary-structure', 'uniform', 'polymer-id',
+                                                            'polymer-index', 'secondary-structure', 'sequence-id',
+                                                            'structure-index', 'atom-id', 'molecule-type',
+                                                            'hydrophobicity', 'cartoon'],
                                                    value='chain-id',
                                                    interactive=True)
         gr.Markdown('<span style="font-size:15px; font-weight:bold;">Result</span>')
