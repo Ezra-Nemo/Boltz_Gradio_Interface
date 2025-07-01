@@ -784,7 +784,7 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
     total_files = len(cif_files)
     if final_mols:
         buster = PoseBusters('mol')
-        df = buster.bust(final_mols)
+        df = buster.bust(final_mols, full_report=True)
         df = df.reset_index()
         full_cols = df.columns
         df['All Passes'] = df[target_col].sum(1) == len(target_col)
