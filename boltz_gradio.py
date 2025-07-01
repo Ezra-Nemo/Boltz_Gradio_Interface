@@ -449,8 +449,9 @@ def execute_multi_boltz(all_files: list[str],
     
     out_pred_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{rng_basename}', 'predictions'))
     dir_names_output_map = [{'out' : out_pred_dir/n/f'{n}_model_combined.cif',
-                             'cifs': sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
-                                            key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))} 
+                             'cifs': [os.path.join(out_pred_dir, _f) 
+                                      for _f in sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
+                                                       key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))]} 
                             for n in os.listdir(out_pred_dir) if os.path.isdir(out_pred_dir / n)]
     progress_text = f'Writing combined model: 0/{len(dir_names_output_map)}'
     yield gr.update(), full_output + progress_text
@@ -575,8 +576,9 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         name, smiles = row['Name'], row['SMILES']
         dir_smiles_dict[out_pred_dir / f'{name}'] = smiles
     dir_names_output_map = [{'out' : out_pred_dir/n/f'{n}_model_combined.cif',
-                             'cifs': sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
-                                            key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1])),
+                             'cifs': [os.path.join(out_pred_dir, _f) 
+                                      for _f in sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
+                                                       key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))],
                              'smiles': dir_smiles_dict[out_pred_dir/n]} 
                             for n in os.listdir(out_pred_dir) if os.path.isdir(out_pred_dir / n)]
     with ThreadPoolExecutor() as executor:
