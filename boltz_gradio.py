@@ -22,7 +22,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from functools import partial
 
-from gemmi import cif   # type: ignore
+from Bio.PDB.mmcifio import MMCIFIO
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 # TODO: Convert AF3/Chai-1/Protenix JSON to Boltz YAML
 
@@ -299,6 +300,29 @@ def update_bond_sequence_length_with_chain(sel_chain: str, mapping_dict: dict):
     else:
         return gr.update(choices=None, value=None)
 
+def _combine_cif_models_to_dict(target_files: list):
+    combined_dict = MMCIF2Dict(target_files[0])
+    atom_site_keys = [k for k in combined_dict.keys() if k.startswith('_atom_site.')]
+    
+    for i, cif_file in enumerate(target_files[1:]):
+        d = MMCIF2Dict(cif_file)
+        for k in atom_site_keys:
+            if k != '_atom_site.pdbx_PDB_model_num':
+                combined_dict[k].extend(d[k])
+            else:
+                model_num = [f'{i+2}'] * len(d[k])
+                combined_dict[k].extend(model_num)
+    
+    return combined_dict
+
+def _write_cif_dict_to_cif(cif_dict: dict, out_pth: str):
+    cif_io = MMCIFIO()
+    cif_io.set_dict(cif_dict)
+    cif_io.save(str(out_pth))
+
+def combine_and_write_cif(target_files: list, out_pth: str):
+    _write_cif_dict_to_cif(_combine_cif_models_to_dict(target_files), out_pth)
+
 ### Running Boltz ###
 def execute_single_boltz(file_name: str, yaml_str: str,
                          devices: int, accelerator: str,
@@ -355,7 +379,17 @@ def execute_single_boltz(file_name: str, yaml_str: str,
         yield gr.update(value='Predicting...', interactive=False), full_output
     curr_running_process.stdout.close()
     curr_running_process.wait()
-    full_output += 'Prediction Done!\n'
+    full_output += 'Prediction Done!\nWriting combined model...\n'
+    out_struct_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{random_dir_name}', 'predictions', file_name))
+    all_mdls = []
+    for f in os.listdir(out_struct_dir):
+        if f.endswith('.cif'):
+            all_mdls.append(os.path.join(out_struct_dir, f))
+    all_mdls = sorted(all_mdls, key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))
+    combined_cif_pth = os.path.join(out_struct_dir, f'{file_name}_model_combined.cif')
+    combine_and_write_cif(all_mdls, combined_cif_pth)
+    full_output += 'Combined model written!'
+    
     yield gr.update(value='Run Boltz', interactive=True), full_output
 
 def execute_multi_boltz(all_files: list[str],
@@ -412,6 +446,29 @@ def execute_multi_boltz(all_files: list[str],
     curr_running_process.stdout.close()
     curr_running_process.wait()
     full_output += 'Prediction Done!\n'
+    
+    out_pred_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{rng_basename}', 'predictions'))
+    dir_names_output_map = [{'out' : out_pred_dir/n/f'{n}_model_combined.cif',
+                             'cifs': sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
+                                            key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))} 
+                            for n in os.listdir(out_pred_dir) if os.path.isdir(out_pred_dir / n)]
+    progress_text = f'Writing combined model: 0/{len(dir_names_output_map)}'
+    yield gr.update(), full_output + progress_text
+    
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(combine_and_write_cif, d['cifs'], d['out']) for 
+                   d in dir_names_output_map]
+        total = len(futures)
+        n = 0
+        progress_text = f'Writing combined model: 0/{total}'
+        yield gr.update(), full_output + progress_text
+        for f in as_completed(futures):
+            n += 1
+            progress_text = f'Writing combined model: {n}/{total}'
+            yield gr.update(), full_output + progress_text
+    
+    full_output += f'{progress_text}\nCombined model written!'
+    
     yield gr.update(value='Batch Predict', interactive=True), full_output
 
 def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
@@ -488,7 +545,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                 if msa_f.endswith('.csv'):
                     num = msa_f.rsplit('.', 1)[0].rsplit('_', 1)[-1]
                     num_msa_pth_map[int(num)] = os.path.join(msa_dir, msa_f)
-            # Just add the csv path containing the MSA to the "msa" key of template.
+            # Just add the csv path containing the MSA to the "msa" key of template. 
             # Number by the index of list within the "sequences" key!
             for seq_num, seq_info in enumerate(yaml_template_dict['sequences']):
                 if seq_num in num_msa_pth_map:
@@ -506,34 +563,37 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
         else:
             full_output += line
-        yield gr.update(value='Predicting...', interactive=False), full_output
+        yield gr.update(), full_output
     curr_running_process.stdout.close()
     curr_running_process.wait()
-    full_output += 'Prediction Done. Processing ligand to SDF format...\n'
+    full_output += 'Prediction Done. Post-Processing files...\n'
+    yield gr.update(), full_output
     
     out_pred_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{random_dir_name}', 'predictions'))
     dir_smiles_dict = {}
     for _, row in all_ligands.iterrows():
         name, smiles = row['Name'], row['SMILES']
         dir_smiles_dict[out_pred_dir / f'{name}'] = smiles
+    dir_names_output_map = [{'out' : out_pred_dir/n/f'{n}_model_combined.cif',
+                             'cifs': sorted([f for f in os.listdir(out_pred_dir/n) if f.endswith('.cif')],
+                                            key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1])),
+                             'smiles': dir_smiles_dict[out_pred_dir/n]} 
+                            for n in os.listdir(out_pred_dir) if os.path.isdir(out_pred_dir / n)]
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(_recover_dir_molecule, cif_dir, smiles, ligand_chain) for 
-                   cif_dir, smiles in dir_smiles_dict.items()]
+        futures = [executor.submit(recover_and_combine_cif, d['cifs'], d['smiles'], ligand_chain, d['out']) for 
+                   d in dir_names_output_map]
         total = len(futures)
         n = 0
-        errors = ''
-        progress_text = f'SDF Format Conversion Progress: {n} / {total}'
-        yield gr.update(value='Predicting...', interactive=False), full_output + progress_text
+        progress_text = f'Post-Processing Progress: {n} / {total}'
+        yield gr.update(), full_output + progress_text
         for f in as_completed(futures):
             err = f.result()
-            if err:
-                errors += err
             n += 1
-            progress_text = f'SDF Format Conversion Progress: {n} / {total}'
-            yield gr.update(value='Predicting...', interactive=False), full_output + errors + progress_text
+            progress_text = f'Post-Processing Progress: {n} / {total}'
+            yield gr.update(), full_output + progress_text
             
     progress_text += '\nvHTS done!'
-    yield gr.update(value='Run vHTS', interactive=True), full_output + errors + progress_text
+    yield gr.update(value='Run vHTS', interactive=True), full_output + progress_text
 
 ### vHTS ###
 def update_chem_file_format(chem_type: str):
@@ -667,7 +727,7 @@ def __extract_ligand_coord(cif_pth: str, lig_chain: str):
                 if line_splitted[p_map['Chain']] == lig_chain:
                     a, x, y, z = line_splitted[p_map['Atom']], line_splitted[p_map['X']], \
                         line_splitted[p_map['Y']], line_splitted[p_map['Z']]
-                    a = Chem.Atom(periodic_table.GetAtomicNumber(a.lower().capitalize()))
+                    a = Chem.Atom(periodic_table.GetAtomicNumber(a))
                     atom_coord_info.append((a, Point3D(float(x), float(y), float(z))))
             if atom_coord_info and l.startswith('#'):
                 break
@@ -691,7 +751,7 @@ def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
     ref_mol = Chem.MolFromSmiles(smiles)
     errors = ''
     for f in os.listdir(cif_dir):
-        if f.endswith('.cif'):
+        if f.endswith('.cif') and not f.endswith('_model_combined.cif'):
             try:
                 data = __extract_ligand_coord(os.path.join(cif_dir, f), ligand_chain)
                 coord_mol = __reconstruct_mol_from_data(data)
@@ -709,11 +769,33 @@ def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
                 errors += f'{e}\n'
     return errors
 
+def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out_cif: str):
+    ref_mol = Chem.MolFromSmiles(smiles)
+    errors = ''
+    for f in cif_files:
+        try:
+            data = __extract_ligand_coord(f, ligand_chain)
+            coord_mol = __reconstruct_mol_from_data(data)
+            final_mol = AllChem.AssignBondOrdersFromTemplate(ref_mol, coord_mol)
+            AllChem.AssignStereochemistryFrom3D(final_mol)
+            for a in final_mol.GetAtoms():
+                a.SetNumRadicalElectrons(0)
+            name = os.path.basename(f).rsplit('.', 1)[0]
+            out_sdf_f = os.path.join(os.path.dirname(f), name + '.sdf')
+            final_mol.SetProp('_Name', name)
+            final_mol.SetProp('SMILES', Chem.MolToSmiles(final_mol))
+            with Chem.SDWriter(out_sdf_f) as w:
+                w.write(final_mol)
+        except Exception as e:
+            errors += f'{e}\n'
+    combine_and_write_cif(cif_files, out_cif)
+    return errors
+
 ### Result visulization ###
-def get_molstar_html(mmcif_base64):
+def get_general_molstar_html(mmcif_base64, mdl_idx, color='chain-id'):
     return f"""
     <iframe
-        id="molstar_frame"
+        id="molstar_frame_general"
         style="width: 100%; height: 600px; border: none;"
         srcdoc='
             <!DOCTYPE html>
@@ -732,18 +814,31 @@ def get_molstar_html(mmcif_base64):
                               viewportShowExpand: true,
                               showWelcomeToast: false}});
                             
-                            const mmcifData = "{mmcif_base64}";
-                            const blob = new Blob(
-                                [atob(mmcifData)],
-                                {{ type: "text/plain" }}
-                            );
-                            const url = URL.createObjectURL(blob);
-
-                            try {{
-                                await viewer.loadStructureFromUrl(url, "mmcif");
-                            }} catch (error) {{
-                                console.error("Error loading structure:", error);
-                            }}
+                            const mmcifBase64 = "{mmcif_base64}";
+                            const rawString = atob(mmcifBase64);
+                            
+                            const data = await viewer.plugin.builders.data.rawData({{
+                                data: rawString,
+                                label: "mmcif"
+                                }});
+                            
+                            const trajectory = await viewer.plugin.builders.structure.parseTrajectory(data, "mmcif");
+                            const repr = await viewer.plugin.builders.structure.hierarchy.applyPreset(
+                                trajectory,
+                                "default",
+                                {{ model: {{ modelIndex: {mdl_idx} }}, 
+                                   representationPresetParams: {{ theme: {{ globalName: "{color}" }} }} 
+                                }})
+                            window.trajectory = trajectory;
+                            window.viewer     = viewer;
+                            window.modelIndex = {mdl_idx};
+                            window.repr = repr;
+                            window.addEventListener("message", async (e) => {{
+                                if (e.data?.type === "change-theme") {{
+                                    window.parent.console.log(e.data.themeName);
+                                    window.parent.console.log( repr );
+                                }}
+                            }});
                       }})();
                     </script>
                 </body>
@@ -780,11 +875,16 @@ def read_output_files(read_vhts: bool):
                     all_files = os.listdir(pred_dir)
                     total_models = len(all_files) // 5
                     aff_pth = os.path.join(pred_dir, f'affinity_{name}.json')
+                    combined_cif_pth = os.path.join(pred_dir, f'{name}_model_combined.cif')
                     if not os.path.exists(aff_pth):
                         aff_pth = None
+                    if not os.path.exists(combined_cif_pth):    # Just in case
+                        all_mdls = [os.path.join(pred_dir, f'{name}_model_{i}.cif') for i in range(total_models)]
+                        combine_and_write_cif(all_mdls, combined_cif_pth)
                     for i in range(total_models):
                         cnf_pth  = os.path.join(pred_dir, f'confidence_{name}_model_{i}.json')
-                        mdl_pth  = os.path.join(pred_dir, f'{name}_model_{i}.cif')
+                        # mdl_pth  = os.path.join(pred_dir, f'{name}_model_{i}.cif')
+                        mdl_pth  = combined_cif_pth
                         pae_pth  = os.path.join(pred_dir, f'pae_{name}_model_{i}.npz')
                         pde_pth  = os.path.join(pred_dir, f'pde_{name}_model_{i}.npz')
                         plddt_pth  = os.path.join(pred_dir, f'plddt_{name}_model_{i}.npz')
@@ -806,13 +906,20 @@ def update_name_rank_dropdown(name: str, name_rank_f_map: dict):
     total_rank = len(name_rank_f_map[name])
     return gr.update(choices=[f'Rank {i}' for i in range(1, total_rank + 1)])
 
-def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict):
+def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict, color: str):
     if not rank_name.strip():
         return [gr.update()] * 8
     rank = int(rank_name.split(' ')[-1]) - 1
     conf_metrics = name_rank_f_map[name][rank]
     if rank+1 > len(conf_metrics):
         return [gr.update()] * 8
+    with open(conf_metrics['cif_model']) as f:
+        mdl_strs = f.read()
+    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    
+    yield (get_general_molstar_html(cif_base64, rank, color), gr.update(''), gr.update(''),
+           gr.update(''), gr.update(''), gr.update(''), gr.update(''), gr.update(''))
+    
     with open(conf_metrics['confidence']) as f:
         conf_dict = json.load(f)
     overall_conf, chain_conf, pair_chain_conf = [], [], []
@@ -839,28 +946,25 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
         aff_update = gr.update(value=aff_update, visible=True)
     else:
         aff_update = gr.update(visible=False)
-    with open(conf_metrics['cif_model']) as f:
-        mdl_strs = f.read()
-    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
-    
-    yield (get_molstar_html(cif_base64), gr.update(''), gr.update(''),
-           gr.update(''), gr.update(''), gr.update(''), gr.update(''), gr.update(''))
     
     length_split = [0]
     chain_entity_map = {}
-    last_res, last_c, i = None, None, 0
+    last_res, last_c, i, last_mdl_num = None, None, 0, None
     for line in mdl_strs.split('\n'):
         if line.startswith(('ATOM', 'HETATM')):
             if line.strip() == '#':
                 break
-            all_splitted = line.strip().split(' ')
-            res_id, entity_id, c = all_splitted[6], all_splitted[14], all_splitted[15]
+            all_splitted = line.strip().split()
+            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
             chain_entity_map[c] = entity_id
             if last_c is not None and last_c != c:
                 length_split.append(int(last_res) if last_res != '.' else i)
                 i = 0
+            if last_mdl_num is not None and mdl_num != last_mdl_num:
+                break
             last_c = c
             last_res = res_id
+            last_mdl_num = mdl_num
             if res_id == '.':
                 i += 1
         elif line == '_atom_type.symbol':
@@ -916,7 +1020,79 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
                          show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
             aff_update, pae_fig, pde_fig, plddt_fig)
 
+def update_general_molstar_only(name: str, rank_name: str, name_rank_f_map: dict, color: str):
+    if not rank_name.strip():
+        return [gr.update()] * 8
+    rank = int(rank_name.split(' ')[-1]) - 1
+    conf_metrics = name_rank_f_map[name][rank]
+    with open(conf_metrics['cif_model']) as f:
+        mdl_strs = f.read()
+    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    
+    yield get_general_molstar_html(cif_base64, rank, color)
+    
+
 ### vHTS Processing ###
+def get_vhts_molstar_html(mmcif_base64, mdl_idx, color='plddt-confidence'):
+    return f"""
+    <iframe
+        id="molstar_frame_general"
+        style="width: 100%; height: 600px; border: none;"
+        srcdoc='
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <script src="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.js"></script>
+                    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@rcsb/rcsb-molstar/build/dist/viewer/rcsb-molstar.css">
+                </head>
+                <body>
+                    <div id="Viewer" style="width: 1200px; height: 400px; position: center"></div>
+                    <script>
+                        (async function() {{
+                            const viewer = new rcsbMolstar.Viewer("Viewer",
+                            {{layoutIsExpanded: true,
+                              layoutShowControls: false,
+                              viewportShowExpand: true,
+                              showWelcomeToast: false}});
+                            
+                            const mmcifBase64 = "{mmcif_base64}";
+                            const rawString = atob(mmcifBase64);
+                            
+                            const data = await viewer.plugin.builders.data.rawData({{
+                                data: rawString,
+                                label: "mmcif"
+                                }});
+                            
+                            const trajectory = await viewer.plugin.builders.structure.parseTrajectory(data, "mmcif");
+                            await viewer.plugin.builders.structure.hierarchy.applyPreset(
+                                trajectory,
+                                "default",
+                                {{ model: {{ modelIndex: {mdl_idx} }}, 
+                                   representationPresetParams: {{ theme: {{ globalName: "{color}" }} }} 
+                                }})
+                            window.trajectory = trajectory;
+                            window.viewer     = viewer;
+                            window.modelIndex = {mdl_idx};
+                            window.addEventListener("message", async (e) => {{
+                                if (e.data?.type === "change-theme") {{
+                                    await viewer.plugin.builders.structure.hierarchy.applyPreset(
+                                        trajectory, "default",
+                                        {{
+                                            model: {{ modelIndex: window.modelIndex }}, 
+                                            representationPresetParams: {{
+                                                theme: {{ globalName: e.data.themeName }}
+                                            }}
+                                        }}
+                                    );
+                                }}
+                            }});
+                      }})();
+                    </script>
+                </body>
+            </html>
+        '>
+    </iframe>"""
+
 def read_vhts_directory():
     vhts_name_df = {}
     vhts_name_pth_map = {}
@@ -942,11 +1118,18 @@ def read_vhts_directory():
                 vhts_name_pth_map[name] = {'Name': [], 'conf': [], 'aff': [],
                                            'struct': [], 'pae': [], 'pde': [], 'plddt': []}
                 for n in os.listdir(pred_dir):
+                    if n.startswith('.'):
+                        continue
                     docked_dir = Path(os.path.join(pred_dir, n))
+                    combined_cif_pth = os.path.join(docked_dir, f'{n}_model_combined.cif')
+                    if not os.path.exists(combined_cif_pth):    # Just in case
+                        all_mdls = [os.path.join(docked_dir, f'{n}_model_{i}.cif') for i in 
+                                    range(sum(1 for i in os.listdir(docked_dir) if i.endswith('.cif')))]
+                        combine_and_write_cif(all_mdls, combined_cif_pth)
                     if os.path.isdir(docked_dir):
                         conf_pth   = docked_dir / f'confidence_{n}_model_0.json'
                         aff_pth    = docked_dir / f'affinity_{n}.json'
-                        struct_pth = docked_dir / f'{n}_model_0.cif'
+                        struct_pth = docked_dir / combined_cif_pth
                         pae_pth    = docked_dir / f'pae_{n}_model_0.npz'
                         pde_pth    = docked_dir / f'pde_{n}_model_0.npz'
                         plddt_pth  = docked_dir / f'plddt_{n}_model_0.npz'
@@ -1006,19 +1189,22 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     
     length_split = [0]
     chain_entity_map = {}
-    last_res, last_c, i = None, None, 0
+    last_res, last_c, i, last_mdl_num = None, None, 0, None
     for line in mdl_strs.split('\n'):
         if line.startswith(('ATOM', 'HETATM')):
             if line.strip() == '#':
                 break
-            all_splitted = line.strip().split(' ')
-            res_id, entity_id, c = all_splitted[6], all_splitted[14], all_splitted[15]
+            all_splitted = line.strip().split()
+            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
             chain_entity_map[c] = entity_id
             if last_c is not None and last_c != c:
                 length_split.append(int(last_res) if last_res != '.' else i)
                 i = 0
+            if last_mdl_num is not None and mdl_num != last_mdl_num:
+                break
             last_c = c
             last_res = res_id
+            last_mdl_num = mdl_num
             if res_id == '.':
                 i += 1
         elif line == '_atom_type.symbol':
@@ -1068,7 +1254,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
                             xaxis=dict(title=dict(text='Residue')),
                             yaxis=dict(title=dict(text='pLDDT')),
                             template='simple_white')
-    return (get_molstar_html(cif_base64), overall_conf, chain_conf,
+    return (get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence'), overall_conf, chain_conf,
             gr.DataFrame(value=pair_chain_conf,
                          headers=[f'{i+1}' for i in range(len(chain_conf))],
                          show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
@@ -1228,7 +1414,7 @@ def reverse_complementary_nucleic_acid(inp_na: str, type: str):
 def get_ligand_molstar_html(ccd_id: str):
     return f"""
     <iframe
-        id="molstar_frame"
+        id="molstar_frame_ligand"
         style="width: 100%; height: 400px; border: none;"
         srcdoc='
             <!DOCTYPE html>
@@ -1301,14 +1487,17 @@ def draw_ccd_mol_3d(ccd_id: str):
     if result.status_code == 404:
         yield get_ligand_molstar_html(''), pd.DataFrame()
     
-    data = cif.read_string(result.text)[ccd_id]
+    sio = io.StringIO(result.text)
+    lig_dict = MMCIF2Dict(sio)
     chem_descriptor_prefix = '_pdbx_chem_comp_descriptor'
     looped_name = ['type', 'program', 'descriptor']
     data_dict = {}
     
-    for name in looped_name:
-        loop = data.find_values(f'{chem_descriptor_prefix}.{name}')
-        data_dict[name.capitalize()] = [i.replace('"', '') for i in list(loop)]
+    for k in lig_dict:
+        if k.startswith(chem_descriptor_prefix):
+            sub_k = k.rsplit('.', 1)[-1]
+            if sub_k in looped_name:
+                data_dict[sub_k.capitalize()] = [i.replace('"', '') for i in list(lig_dict[k])]
     
     yield gr.update(), pd.DataFrame(data_dict)
 
@@ -2203,8 +2392,17 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
             result_rank_dropdown = gr.Dropdown(label='Rank',
                                                info='Rank of the selected complex',
                                                interactive=True)
+            result_coloring_dropdown = gr.Dropdown(label='Theme',
+                                                   info='Coloring theme for structure',
+                                                   choices=['chain-id', 'plddt-confidence', 'element-symbol',
+                                                            'entity-id', 'residue-name', 'secondary-structure',
+                                                            'uniform', 'polymer-id', 'polymer-index',
+                                                            'secondary-structure', 'sequence-id', 'structure-index',
+                                                            'atom-id', 'molecule-type'],
+                                                   value='chain-id',
+                                                   interactive=True)
         gr.Markdown('<span style="font-size:15px; font-weight:bold;">Result</span>')
-        mol_star_html = gr.HTML(get_molstar_html(''))
+        mol_star_html = gr.HTML(get_general_molstar_html('', 0))
         with gr.Row():
             conf_df = gr.DataFrame(headers=['Metric', 'Score'], label='Overall Metrics', scale=1)
             with gr.Column(scale=2):
@@ -2231,13 +2429,27 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                    inputs=[result_name_dropdown, name_rank_f_map_state],
                                    outputs=result_rank_dropdown)
         result_name_dropdown.input(update_result_visualization,
-                                   inputs=[result_name_dropdown, result_rank_dropdown, name_rank_f_map_state],
+                                   inputs=[result_name_dropdown, result_rank_dropdown,
+                                           name_rank_f_map_state, result_coloring_dropdown],
                                    outputs=[mol_star_html, conf_df, chain_metrics, pair_chain_metrics,
                                             aff_df, pae_plot, pde_plot, plddt_plot])
         result_rank_dropdown.input(update_result_visualization,
-                                   inputs=[result_name_dropdown, result_rank_dropdown, name_rank_f_map_state],
+                                   inputs=[result_name_dropdown, result_rank_dropdown,
+                                           name_rank_f_map_state, result_coloring_dropdown],
                                    outputs=[mol_star_html, conf_df, chain_metrics, pair_chain_metrics,
                                             aff_df, pae_plot, pde_plot, plddt_plot])
+        # result_coloring_dropdown.change(None, [result_coloring_dropdown], [],
+        #                                 js="""
+        #                                 (theme) => {
+        #                                     const frame = document.getElementById('molstar_frame_general');
+        #                                     frame.contentWindow.postMessage(
+        #                                         { type: 'change-theme', themeName: theme },
+        #                                         window.location.origin
+        #                                         );}""")
+        result_coloring_dropdown.input(update_general_molstar_only,
+                                       inputs=[result_name_dropdown, result_rank_dropdown,
+                                           name_rank_f_map_state, result_coloring_dropdown],
+                                       outputs=mol_star_html)
     
     
     with gr.Tab('vHTS Analysis'):
@@ -2259,7 +2471,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         #     with gr.Column(scale=3):
         #         ...
         vhts_header = gr.Markdown('<span style="font-size:15px; font-weight:bold;">Visualization</span>')
-        vhts_mol_star_html = gr.HTML(get_molstar_html(''))
+        vhts_mol_star_html = gr.HTML(get_vhts_molstar_html('', 0))
         
         with gr.Row():
             vhts_conf_df = gr.DataFrame(headers=['Metric', 'Score'], label='Overall Metrics', scale=1)
