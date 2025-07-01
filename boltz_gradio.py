@@ -782,7 +782,7 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
                   'internal_steric_clash', 'aromatic_ring_flatness', 'non-aromatic_ring_non-flatness',
                   'double_bond_flatness', 'internal_energy', 'passes_valence_checks', 'passes_kekulization']
     total_files = len(cif_files)
-    if not final_mols:
+    if final_mols:
         buster = PoseBusters('mol')
         df = buster.bust(final_mols)
         df = df.reset_index()
