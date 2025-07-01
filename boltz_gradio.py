@@ -380,7 +380,7 @@ def execute_single_boltz(file_name: str, yaml_str: str,
     curr_running_process.stdout.close()
     curr_running_process.wait()
     full_output += 'Prediction Done!\nWriting combined model...\n'
-    out_struct_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{random_dir_name}', 'predictions', file_name))
+    out_struct_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{file_name}', 'predictions', file_name))
     all_mdls = []
     for f in os.listdir(out_struct_dir):
         if f.endswith('.cif'):
