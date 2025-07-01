@@ -1184,13 +1184,13 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     if not row_value[0]:
         yield [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Failed to load visualization</span>']
         
+    parent, name = row_value[-1], row_value[0]
+    conf_metrics = name_fpth_map[parent][name]
     with open(conf_metrics['struct']) as f:
         mdl_strs = f.read()
     cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
-    parent, name = row_value[-1], row_value[0]
     yield [get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence')] + [gr.update()] * 7 + [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
     
-    conf_metrics = name_fpth_map[parent][name]
     with open(conf_metrics['conf']) as f:
         conf_dict = json.load(f)
     overall_conf, chain_conf, pair_chain_conf = [], [], []
