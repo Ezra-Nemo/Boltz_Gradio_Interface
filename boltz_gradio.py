@@ -94,7 +94,7 @@ os.makedirs(input_dir)
 ### Defining Boltz parameters ###
 device_number = gr.Number(1, label='devices',
                           info='The number of devices to use for prediction.',
-                          minimum=1, maximum=device_num, interactive=True)
+                          minimum=device_num, maximum=device_num, interactive=True)
 acc_choices = ['gpu', 'cpu'] if cuda_available else ['cpu']
 accelerator_type = gr.Dropdown(acc_choices, value=acc_choices[0],
                                 info='The accelerator to use for prediction.',
@@ -2427,7 +2427,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                             'polymer-index', 'secondary-structure', 'sequence-id',
                                                             'structure-index', 'atom-id', 'molecule-type',
                                                             'hydrophobicity', 'cartoon'],
-                                                   value='chain-id',
+                                                   value='element-symbol',
                                                    interactive=True)
         gr.Markdown('<span style="font-size:15px; font-weight:bold;">Result</span>')
         mol_star_html = gr.HTML(get_general_molstar_html('', 0))
