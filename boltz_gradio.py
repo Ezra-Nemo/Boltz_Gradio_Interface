@@ -731,7 +731,7 @@ def __extract_ligand_coord(cif_pth: str, lig_chain: str):
                 if line_splitted[p_map['Chain']] == lig_chain:
                     a, x, y, z = line_splitted[p_map['Atom']], line_splitted[p_map['X']], \
                         line_splitted[p_map['Y']], line_splitted[p_map['Z']]
-                    a = Chem.Atom(periodic_table.GetAtomicNumber(a))
+                    a = Chem.Atom(periodic_table.GetAtomicNumber(a.lower().capitalize()))
                     atom_coord_info.append((a, Point3D(float(x), float(y), float(z))))
             if atom_coord_info and l.startswith('#'):
                 break
@@ -755,6 +755,7 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
     ref_mol = Chem.MolFromSmiles(smiles)
     errors = ''
     final_mols = []
+    dir_name = os.path.basename(os.path.dirname(cif_files[0]))
     for f in cif_files:
         try:
             data = __extract_ligand_coord(f, ligand_chain)
@@ -774,8 +775,9 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
                 w.write(final_mol)
             final_mols.append(final_mol)
         except Exception as e:
+            print(e)
             errors += f'{e}\n'
-    csv_name = os.path.join(os.path.dirname(f), name.rsplit('_', 2)[0] + '_bust.csv')
+    csv_name = os.path.join(os.path.dirname(f), dir_name + '_bust.csv')
     target_col = ['mol_pred_loaded', 'sanitization', 'all_atoms_connected', 'bond_lengths', 'bond_angles',
                   'internal_steric_clash', 'aromatic_ring_flatness', 'non-aromatic_ring_non-flatness',
                   'double_bond_flatness', 'internal_energy', 'passes_valence_checks', 'passes_kekulization']
