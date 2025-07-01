@@ -751,28 +751,6 @@ def __reconstruct_mol_from_data(mol_data: list[tuple]):
     DetermineConnectivity(mol)
     return mol
 
-def _recover_dir_molecule(cif_dir: str, smiles: str, ligand_chain: str):
-    ref_mol = Chem.MolFromSmiles(smiles)
-    errors = ''
-    for f in os.listdir(cif_dir):
-        if f.endswith('.cif') and not f.endswith('_model_combined.cif'):
-            try:
-                data = __extract_ligand_coord(os.path.join(cif_dir, f), ligand_chain)
-                coord_mol = __reconstruct_mol_from_data(data)
-                final_mol = AllChem.AssignBondOrdersFromTemplate(ref_mol, coord_mol)
-                AllChem.AssignStereochemistryFrom3D(final_mol)
-                for a in final_mol.GetAtoms():
-                    a.SetNumRadicalElectrons(0)
-                name = f.rsplit('.', 1)[0]
-                out_sdf_f = os.path.join(cif_dir, name + '.sdf')
-                final_mol.SetProp('_Name', name)
-                final_mol.SetProp('SMILES', Chem.MolToSmiles(final_mol))
-                with Chem.SDWriter(out_sdf_f) as w:
-                    w.write(final_mol)
-            except Exception as e:
-                errors += f'{e}\n'
-    return errors
-
 def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out_cif: str):
     ref_mol = Chem.MolFromSmiles(smiles)
     errors = ''
@@ -797,9 +775,35 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
             final_mols.append(final_mol)
         except Exception as e:
             errors += f'{e}\n'
-    buster = PoseBusters('mol')
-    df = buster.bust([final_mols])
     csv_name = os.path.join(os.path.dirname(f), name.rsplit('_', 2)[0] + '_bust.csv')
+    target_col = ['mol_pred_loaded', 'sanitization', 'all_atoms_connected', 'bond_lengths', 'bond_angles',
+                  'internal_steric_clash', 'aromatic_ring_flatness', 'non-aromatic_ring_non-flatness',
+                  'double_bond_flatness', 'internal_energy', 'passes_valence_checks', 'passes_kekulization']
+    total_files = len(cif_files)
+    if not final_mols:
+        buster = PoseBusters('mol')
+        df = buster.bust(final_mols)
+        df = df.reset_index()
+        full_cols = df.columns
+        df['All Passes'] = df[target_col].sum(1) == len(target_col)
+        df['Rank'] = df['molecule'].apply(lambda x: f"Rank_{int(x.rsplit('_', 1)[-1])+1}")
+        df['Rank_N'] = df['Rank'].apply(lambda x: int(x.rsplit('_', 1)[-1]))
+        all_ranks = df['Rank_N'].to_list()
+        
+        for i in range(1, total_files+1):
+            if i not in all_ranks:
+                new_row = {c: np.nan for c in full_cols}
+                new_row.update({'Rank': f'Rank_{i}', 'Rank_N': i, 'All Passes': False})
+                df.loc[len(df)] = new_row
+        df = df.sort_values('Rank_N')
+        
+        final_col = ['Rank'] + target_col + ['All Passes']
+        df = df[final_col].astype({c: 'boolean' for c in final_col if c != 'Rank'})
+    else:
+        rows = {c: [np.nan]*total_files for c in target_col}
+        rows['Rank'] = [f'Rank_{i}' for i in range(1, total_files+1)]
+        rows['All Passes'] = [False] * total_files
+        df = pd.DataFrame(rows)
     df.to_csv(csv_name, index=False)
     combine_and_write_cif(cif_files, out_cif)
     return errors
@@ -1126,7 +1130,8 @@ def read_vhts_directory():
                         new_name = f'{name}_{i}'
                     name = new_name
                 pred_dir = os.path.join(rng_dir, target_pth, 'predictions')
-                df_data = {'Name': [], 'ligand ipTM': [], 'binding prob.': [], 'binding aff.': []}
+                df_data = {'Name': [], 'ligand ipTM': [], 'binding prob.': [],
+                           'binding aff.': [], 'Pass Posebusters?': []}
                 vhts_name_pth_map[name] = {'Name': [], 'conf': [], 'aff': [],
                                            'struct': [], 'pae': [], 'pde': [], 'plddt': []}
                 for n in os.listdir(pred_dir):
@@ -1145,20 +1150,24 @@ def read_vhts_directory():
                         pae_pth    = docked_dir / f'pae_{n}_model_0.npz'
                         pde_pth    = docked_dir / f'pde_{n}_model_0.npz'
                         plddt_pth  = docked_dir / f'plddt_{n}_model_0.npz'
+                        pose_bust  = docked_dir / f'{n}_bust.csv'
                         with open(conf_pth) as f:
                             ligand_iptm = json.load(f)['ligand_iptm']
                         with open(aff_pth) as f:
                             aff_data = json.load(f)
                             binding_aff = aff_data['affinity_pred_value']
                             binding_prob = aff_data['affinity_probability_binary']
-                        for k, v in zip(df_data, [n, ligand_iptm, binding_prob, binding_aff]):
+                        df = pd.read_csv(pose_bust)
+                        rank_1_pass = df[df['Rank'] == 'Rank_1']['All Passes'].to_list()[0]
+                        for k, v in zip(df_data, [n, ligand_iptm, binding_prob, binding_aff, rank_1_pass]):
                             df_data[k].append(v)
                         vhts_name_pth_map[name][n] = {'conf'  : conf_pth,
                                                       'aff'   : aff_pth,
                                                       'struct': struct_pth,
                                                       'pae'   : pae_pth,
                                                       'pde'   : pde_pth,
-                                                      'plddt' : plddt_pth}
+                                                      'plddt' : plddt_pth,
+                                                      'pose'  : pose_bust,}
                 df_data['Parent'] = [name] * len(df_data['Name'])
                 vhts_name_df[name] = pd.DataFrame(df_data)
     return vhts_name_df, vhts_name_pth_map, gr.update(choices=list(vhts_name_df), value=None)
@@ -1171,8 +1180,14 @@ def update_vhts_df_with_selects(names: list[str], name_df_map: dict):
 def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     row_value = evt.row_value
     if not row_value[0]:
-        return [gr.update()] * 9
+        yield [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Failed to load visualization</span>']
+        
+    with open(conf_metrics['struct']) as f:
+        mdl_strs = f.read()
+    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
     parent, name = row_value[-1], row_value[0]
+    yield [get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence')] + [gr.update()] * 7 + [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
+    
     conf_metrics = name_fpth_map[parent][name]
     with open(conf_metrics['conf']) as f:
         conf_dict = json.load(f)
@@ -1195,9 +1210,11 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     for aff_metric, aff_value in aff_data.items():
         aff_update.append([aff_metric, f'{aff_value:.4f}'])
     aff_update = gr.update(value=aff_update, visible=True)
-    with open(conf_metrics['struct']) as f:
-        mdl_strs = f.read()
-    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    
+    yield [gr.update(), overall_conf, chain_conf,
+           gr.DataFrame(value=pair_chain_conf,
+                        headers=[f'{i+1}' for i in range(len(chain_conf))],
+                        show_row_numbers=True, column_widths=['30px'] * len(chain_conf))] + [gr.update()] * 5
     
     length_split = [0]
     chain_entity_map = {}
@@ -1266,12 +1283,8 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
                             xaxis=dict(title=dict(text='Residue')),
                             yaxis=dict(title=dict(text='pLDDT')),
                             template='simple_white')
-    return (get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence'), overall_conf, chain_conf,
-            gr.DataFrame(value=pair_chain_conf,
-                         headers=[f'{i+1}' for i in range(len(chain_conf))],
-                         show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-            aff_update, pae_fig, pde_fig, plddt_fig,
-            f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>')
+    yield [gr.update()] * 4 + [aff_update, pae_fig, pde_fig, plddt_fig, 
+                               f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
 
 def download_vhts_dataframe(inp_df: pd.DataFrame, format: str):
     inp_df = pd.DataFrame(inp_df)
@@ -2476,7 +2489,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         vhts_output_df = gr.DataFrame(label='vHTS Result Table', interactive=False,
                                       headers=['Name', 'ligand ipTM',
                                                'binding prob.',
-                                               'binding aff.', 'Parent'],
+                                               'binding aff.', 'Pass Posebusters?',
+                                               'Parent'],
                                       show_row_numbers=True, show_copy_button=True, show_search='filter')
         # with gr.Row():
         #     vhts_table_download_format = gr.Dropdown(['', 'CSV', 'TSV', 'XLSX'], value='', label='Tabular Format')
