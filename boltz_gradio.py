@@ -92,9 +92,9 @@ shutil.rmtree(input_dir)
 os.makedirs(input_dir)
 
 ### Defining Boltz parameters ###
-device_number = gr.Number(1, label='devices',
+device_number = gr.Number(device_num, label='devices',
                           info='The number of devices to use for prediction.',
-                          minimum=device_num, maximum=device_num, interactive=True)
+                          minimum=1, maximum=device_num, interactive=True)
 acc_choices = ['gpu', 'cpu'] if cuda_available else ['cpu']
 accelerator_type = gr.Dropdown(acc_choices, value=acc_choices[0],
                                 info='The accelerator to use for prediction.',
