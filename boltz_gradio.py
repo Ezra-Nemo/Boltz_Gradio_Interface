@@ -22,8 +22,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from functools import partial
 
-from Bio.PDB.mmcifio import MMCIFIO
+from Bio.PDB.MMCIFParser import MMCIFParser
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
+from Bio.PDB.cealign import CEAligner
+from Bio.PDB.mmcifio import MMCIFIO
 
 from posebusters import PoseBusters
 
@@ -303,16 +305,38 @@ def update_bond_sequence_length_with_chain(sel_chain: str, mapping_dict: dict):
         return gr.update(choices=None, value=None)
 
 def _combine_cif_models_to_dict(target_files: list):
+    mmcif_parser = MMCIFParser()
+    ref_cif = target_files[0]
+    ref_struct = mmcif_parser.get_structure('ref', ref_cif)
+    
+    aligner = CEAligner()
+    aligner.set_reference(ref_struct)
+    
     combined_dict = MMCIF2Dict(target_files[0])
     atom_site_keys = [k for k in combined_dict.keys() if k.startswith('_atom_site.')]
     
+    mmcif_io = MMCIFIO()
+    
     for i, cif_file in enumerate(target_files[1:]):
-        d = MMCIF2Dict(cif_file)
+        s = mmcif_parser.get_structure('target', cif_file)
+        t_dict = MMCIF2Dict(cif_file)
+        
+        aligner.align(s)
+        
+        mmcif_io.set_structure(s)
+        cif_io = io.StringIO()
+        mmcif_io.save(cif_io)
+        cif_io.seek(0)
+        
+        a_dict = MMCIF2Dict(cif_io)
+        for k in ['_atom_site.Cartn_x', '_atom_site.Cartn_y', '_atom_site.Cartn_z']:
+            t_dict[k] = a_dict[k]
+        
         for k in atom_site_keys:
             if k != '_atom_site.pdbx_PDB_model_num':
-                combined_dict[k].extend(d[k])
+                combined_dict[k].extend(t_dict[k])
             else:
-                model_num = [f'{i+2}'] * len(d[k])
+                model_num = [f'{i+2}'] * len(t_dict[k])
                 combined_dict[k].extend(model_num)
     
     return combined_dict
@@ -502,7 +526,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
     #     final_strs.append('--override')
     cmd = ['boltz', 'predict', inp_rng_dir,
            '--out_dir', out_rng_dir,
-           '--devices', str(devices),
+           '--devices', '1',    # force use only single device
            '--accelerator', accelerator,
            '--recycling_steps', str(recycling_steps),
            '--sampling_steps', str(sampling_steps),
@@ -555,6 +579,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                     seq_info['protein']['msa'] = num_msa_pth_map[seq_num]
     
     cmd.remove('--use_msa_server')
+    cmd[6] = str(devices)   # replace the "devices" param back to user-defined value
     
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             text=True, encoding="utf-8")
@@ -1183,7 +1208,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     row_value = evt.row_value
     if not row_value[0]:
         yield [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Failed to load visualization</span>']
-        
+    
     parent, name = row_value[-1], row_value[0]
     conf_metrics = name_fpth_map[parent][name]
     with open(conf_metrics['struct']) as f:
@@ -2626,12 +2651,12 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 rev_comp_na_text = gr.TextArea(label='Inverse Complement', lines=3,
                                                show_copy_button=True, scale=5)
             
-            inp_nucleic_acid.input(reverse_complementary_nucleic_acid,
-                                   inputs=[inp_nucleic_acid, rev_comp_na_type],
-                                   outputs=rev_comp_na_text)
-            rev_comp_na_type.input(reverse_complementary_nucleic_acid,
-                                   inputs=[inp_nucleic_acid, rev_comp_na_type],
-                                   outputs=rev_comp_na_text)
+            inp_nucleic_acid.change(reverse_complementary_nucleic_acid,
+                                    inputs=[inp_nucleic_acid, rev_comp_na_type],
+                                    outputs=rev_comp_na_text)
+            rev_comp_na_type.change(reverse_complementary_nucleic_acid,
+                                    inputs=[inp_nucleic_acid, rev_comp_na_type],
+                                    outputs=rev_comp_na_text)
         
         with gr.Accordion('Display Tabular File', open=False):
             with gr.Row():
