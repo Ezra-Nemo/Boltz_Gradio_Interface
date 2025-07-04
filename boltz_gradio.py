@@ -70,6 +70,7 @@ footer { display: none !important; }
 .log textarea {font-size: 12px; font-family: Courier New, Courier, monospace; !important}
 .small-upload-style .wrap {font-size: 10px; !important}
 .small-upload-style .icon-wrap svg {display: none; !important}
+.small-header-table tr[slot="thead"] th .cell-wrap {font-size: 10px; !important}
 """
 
 device_num = 1
@@ -1190,6 +1191,7 @@ def read_vhts_directory():
                             rank_1_pass = df[df['Rank'] == 'Rank_1']['All Passes'].to_list()[0]
                         else:
                             rank_1_pass = float('nan')
+                            pose_bust = None
                         for k, v in zip(df_data, [n, ligand_iptm, binding_prob, binding_aff, rank_1_pass]):
                             df_data[k].append(v)
                         vhts_name_pth_map[name][n] = {'conf'  : conf_pth,
@@ -1211,14 +1213,14 @@ def update_vhts_df_with_selects(names: list[str], name_df_map: dict):
 def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     row_value = evt.row_value
     if not row_value[0]:
-        yield [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Failed to load visualization</span>']
+        yield [gr.update()] * 9 + [f'<span style="font-size:15px; font-weight:bold;">Failed to load visualization</span>']
     
     parent, name = row_value[-1], row_value[0]
     conf_metrics = name_fpth_map[parent][name]
     with open(conf_metrics['struct']) as f:
         mdl_strs = f.read()
     cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
-    yield [get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence')] + [gr.update()] * 7 + [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
+    yield [get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence')] + [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
     
     with open(conf_metrics['conf']) as f:
         conf_dict = json.load(f)
@@ -1242,10 +1244,17 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
         aff_update.append([aff_metric, f'{aff_value:.4f}'])
     aff_update = gr.update(value=aff_update, visible=True)
     
+    poseb_f = conf_metrics['pose_bust']
+    if poseb_f is not None:
+        pose_df = pd.read_csv(poseb_f)
+    else:
+        pose_df = None
+    
     yield [gr.update(), overall_conf, chain_conf,
            gr.DataFrame(value=pair_chain_conf,
                         headers=[f'{i+1}' for i in range(len(chain_conf))],
-                        show_row_numbers=True, column_widths=['30px'] * len(chain_conf))] + [gr.update()] * 5
+                        show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
+           gr.DataFrame(value=pose_df)] + [gr.update()] * 5
     
     length_split = [0]
     chain_entity_map = {}
@@ -1314,7 +1323,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
                             xaxis=dict(title=dict(text='Residue')),
                             yaxis=dict(title=dict(text='pLDDT')),
                             template='simple_white')
-    yield [gr.update()] * 4 + [aff_update, pae_fig, pde_fig, plddt_fig, 
+    yield [gr.update()] * 5 + [aff_update, pae_fig, pde_fig, plddt_fig, 
                                f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
 
 def download_vhts_dataframe(inp_df: pd.DataFrame, format: str):
@@ -2542,6 +2551,12 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                            show_row_numbers=True, scale=2,
                                                            wrap=True)
                 vhts_aff_df = gr.DataFrame(headers=['Metric', 'Score'], label='Affinity Metrics')
+        vhts_posebust_df = gr.DataFrame(headers=['Rank', 'mol_pred_loaded', 'sanitization', 'all_atoms_connected',
+                                                 'bond_lengths', 'bond_angles', 'internal_steric_clash',
+                                                 'aromatic_ring_flatness', 'non-aromatic_ring_non-flatness',
+                                                 'double_bond_flatness', 'internal_energy', 'passes_valence_checks',
+                                                 'passes_kekulization', 'All Passes'],
+                                        label='PoseBusters Analysis', elem_classes='small-header-table')
         with gr.Row():
             vhts_pae_plot = gr.Plot(label='PAE', format='png')
             vhts_pde_plot = gr.Plot(label='PDE', format='png')
@@ -2562,8 +2577,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         vhts_output_df.select(update_vhts_result_visualization,
                               inputs=[vhts_name_file_map],
                               outputs=[vhts_mol_star_html, vhts_conf_df, vhts_chain_metrics,
-                                       vhts_pair_chain_metrics, vhts_aff_df, vhts_pae_plot,
-                                       vhts_pde_plot, vhts_plddt_plot, vhts_header])
+                                       vhts_pair_chain_metrics, vhts_aff_df, vhts_posebust_df,
+                                       vhts_pae_plot, vhts_pde_plot, vhts_plddt_plot, vhts_header])
     
     
     with gr.Tab('Boltz Output'):
@@ -2698,7 +2713,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                     outputs=[smiles_3d_viewer, smiles_3d_info])
     
     
-    #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####    
+    #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####
     def change_sequence_label(curr_entity: str, sequence: str, cyclic_ckbox: bool):
         cyclic_ckbox_bool = False if curr_entity in ['CCD', 'Ligand'] else True
         return (gr.update(label=entity_label_map[curr_entity]),
