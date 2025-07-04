@@ -1254,7 +1254,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
            gr.DataFrame(value=pair_chain_conf,
                         headers=[f'{i+1}' for i in range(len(chain_conf))],
                         show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-           gr.DataFrame(value=pose_df)] + [gr.update()] * 5
+           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 5
     
     length_split = [0]
     chain_entity_map = {}
@@ -1323,7 +1323,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
                             xaxis=dict(title=dict(text='Residue')),
                             yaxis=dict(title=dict(text='pLDDT')),
                             template='simple_white')
-    yield [gr.update()] * 5 + [aff_update, pae_fig, pde_fig, plddt_fig, 
+    yield [gr.update()] * 6 + [pae_fig, pde_fig, plddt_fig, 
                                f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
 
 def download_vhts_dataframe(inp_df: pd.DataFrame, format: str):
