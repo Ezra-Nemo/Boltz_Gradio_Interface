@@ -1244,7 +1244,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
         aff_update.append([aff_metric, f'{aff_value:.4f}'])
     aff_update = gr.update(value=aff_update, visible=True)
     
-    poseb_f = conf_metrics['pose_bust']
+    poseb_f = conf_metrics['pose']
     if poseb_f is not None:
         pose_df = pd.read_csv(poseb_f)
     else:
