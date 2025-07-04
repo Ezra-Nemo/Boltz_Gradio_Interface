@@ -462,7 +462,8 @@ def execute_multi_boltz(all_files: list[str],
                                             text=True, encoding="utf-8")
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
-            'You are using a CUDA device' in line:  # Just skip these warnings
+            'You are using a CUDA device' in line or\
+                'No device id is provided via `init_process_group` or' in line:  # Just skip these warnings
             continue
         if line.startswith('Predicting DataLoader'):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
@@ -585,7 +586,8 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                                             text=True, encoding="utf-8")
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
-            'You are using a CUDA device' in line:  # Just skip these warnings
+            'You are using a CUDA device' in line or\
+                'No device id is provided via `init_process_group` or' in line:  # Just skip these warnings
             continue
         if line.startswith('Predicting DataLoader'):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
@@ -922,12 +924,13 @@ def read_output_files(read_vhts: bool):
                     combined_cif_pth = os.path.join(pred_dir, f'{name}_model_combined.cif')
                     if not os.path.exists(aff_pth):
                         aff_pth = None
-                    if not os.path.exists(combined_cif_pth):    # Just in case
-                        all_mdls = [os.path.join(pred_dir, f'{name}_model_{i}.cif') for i in range(total_models)]
-                        combine_and_write_cif(all_mdls, combined_cif_pth)
+                    if not os.path.exists(combined_cif_pth):
+                        # Default back to using single model.
+                        # This shouldn't happen unless user decide to load the structure 
+                        # before the entire prediction is done.
+                        combined_cif_pth = os.path.join(pred_dir, f'{name}_model_{i}.cif')
                     for i in range(total_models):
                         cnf_pth  = os.path.join(pred_dir, f'confidence_{name}_model_{i}.json')
-                        # mdl_pth  = os.path.join(pred_dir, f'{name}_model_{i}.cif')
                         mdl_pth  = combined_cif_pth
                         pae_pth  = os.path.join(pred_dir, f'pae_{name}_model_{i}.npz')
                         pde_pth  = os.path.join(pred_dir, f'pde_{name}_model_{i}.npz')
@@ -1166,10 +1169,8 @@ def read_vhts_directory():
                         continue
                     docked_dir = Path(os.path.join(pred_dir, n))
                     combined_cif_pth = os.path.join(docked_dir, f'{n}_model_combined.cif')
-                    if not os.path.exists(combined_cif_pth):    # Just in case
-                        all_mdls = [os.path.join(docked_dir, f'{n}_model_{i}.cif') for i in 
-                                    range(sum(1 for i in os.listdir(docked_dir) if i.endswith('.cif')))]
-                        combine_and_write_cif(all_mdls, combined_cif_pth)
+                    if not os.path.exists(combined_cif_pth):    # Same logic as the general result visualization
+                        combined_cif_pth = os.path.join(docked_dir, f'{name}_model_{i}.cif')
                     if os.path.isdir(docked_dir):
                         conf_pth   = docked_dir / f'confidence_{n}_model_0.json'
                         aff_pth    = docked_dir / f'affinity_{n}.json'
@@ -1184,8 +1185,11 @@ def read_vhts_directory():
                             aff_data = json.load(f)
                             binding_aff = aff_data['affinity_pred_value']
                             binding_prob = aff_data['affinity_probability_binary']
-                        df = pd.read_csv(pose_bust)
-                        rank_1_pass = df[df['Rank'] == 'Rank_1']['All Passes'].to_list()[0]
+                        if os.path.isfile(pose_bust):
+                            df = pd.read_csv(pose_bust)
+                            rank_1_pass = df[df['Rank'] == 'Rank_1']['All Passes'].to_list()[0]
+                        else:
+                            rank_1_pass = float('nan')
                         for k, v in zip(df_data, [n, ligand_iptm, binding_prob, binding_aff, rank_1_pass]):
                             df_data[k].append(v)
                         vhts_name_pth_map[name][n] = {'conf'  : conf_pth,
@@ -1940,7 +1944,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                 interactive=True, max_lines=15)
         
         single_boltz_log = gr.Textbox(label='Prediction Log', lines=10, max_lines=10,
-                                      autofocus=False, elem_classes='log')
+                                      autofocus=False, elem_classes='log', show_copy_button=True)
         
         template_file.upload(read_tempaltes,
                              inputs=[template_file,
@@ -2075,7 +2079,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                interactive=False, file_count='multiple')
         
         multi_boltz_log = gr.Textbox(label='Prediction Log', lines=10, max_lines=10,
-                                     autofocus=False, elem_classes='log')
+                                     autofocus=False, elem_classes='log', show_copy_button=True)
         
         batch_predict_all_files.click(execute_multi_boltz,
                                       inputs=[processed_inp_files,
@@ -2412,7 +2416,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                  outputs=[vhts_use_template_chekcbox, vhts_target_chain_ids, vhts_template_chain_ids])
         
         vhts_boltz_log = gr.Textbox(label='Prediction Log', lines=10, max_lines=10,
-                                    autofocus=False, elem_classes='log')
+                                    autofocus=False, elem_classes='log', show_copy_button=True)
         
         ligand_dataframe.change(check_yaml_strings,
                                 inputs=[vhts_yaml_demo_text, vhts_complex_prefix, ligand_dataframe],
