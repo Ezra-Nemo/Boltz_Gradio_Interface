@@ -464,7 +464,8 @@ def execute_multi_boltz(all_files: list[str],
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line or\
-                'No device id is provided via `init_process_group` or' in line:  # Just skip these warnings
+                'No device id is provided via `init_process_group` or' or\
+                    'warnings.warn(  # warn only once' in line:  # Just skip these warnings
             continue
         if line.startswith('Predicting DataLoader'):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
@@ -588,7 +589,8 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line or\
-                'No device id is provided via `init_process_group` or' in line:  # Just skip these warnings
+                'No device id is provided via `init_process_group` or' or\
+                    'warnings.warn(  # warn only once' in line:  # Just skip these warnings
             continue
         if line.startswith('Predicting DataLoader'):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
@@ -1918,7 +1920,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     if msa_pth and entity_type == 'protein':
                         target_msa = os.path.join(msa_dir, msa_rng_name, os.path.basename(msa_pth))
                         os.makedirs(os.path.dirname(target_msa), exist_ok=True)
-                        os.rename(msa_pth, target_msa)
+                        shutil.copy(msa_pth, target_msa)
                         curr_dict[entity_type]['msa'] = target_msa
                     if modifications is not None:
                         curr_dict[entity_type]['modifications'] = modifications
