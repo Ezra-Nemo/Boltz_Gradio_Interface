@@ -588,9 +588,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                                             text=True, encoding="utf-8")
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
-            'You are using a CUDA device' in line or\
-                'No device id is provided via `init_process_group` or' or\
-                    'warnings.warn(  # warn only once' in line:  # Just skip these warnings
+            'You are using a CUDA device' in line:
             continue
         if line.startswith('Predicting DataLoader'):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
