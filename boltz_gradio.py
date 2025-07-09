@@ -1593,7 +1593,7 @@ def draw_smiles_3d(smiles_str: str):
 ### Boltz Interface ###
 with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
     gr.Markdown('<span style="font-size:25px; font-weight:bold;">Boltz Interface</span>')
-    with gr.Tab('Single Complex'):
+    with gr.Tab('🧬 Single Complex'):
         gr.Markdown('<span style="font-size:20px; font-weight:bold;">Basic Settings</span>')
         template_name_chain_dict, template_name_path_dict,\
                 template_name_usage_dict, template_name_setting_dict = \
@@ -1994,7 +1994,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                        outputs=[run_single_boltz_button, single_boltz_log])
     
     
-    with gr.Tab('Batch Predict'):
+    with gr.Tab('🚀 Batch Predict'):
         batch_upload_files = gr.State({})
         processed_inp_files = gr.State([])
         with gr.Row():
@@ -2098,7 +2098,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                       outputs=[batch_predict_all_files, multi_boltz_log])
     
     
-    with gr.Tab('vHTS'):
+    with gr.Tab('🧪 vHTS'):
         gr.Markdown('<span style="font-size:20px; font-weight:bold;">Multiple molecules vs Single protein</span>')
         with gr.Accordion('1. Ligand Settings', open=False):
             with gr.Row():
@@ -2444,7 +2444,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                         outputs=[vhts_start_predict_button, vhts_boltz_log])
     
     
-    with gr.Tab('Result Visualization'):
+    with gr.Tab('📊 Result Visualization'):
         name_rank_f_map_state = gr.State({})
         with gr.Row():
             refresh_vis_button = gr.Button('Refresh', scale=1)
@@ -2520,7 +2520,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                        outputs=mol_star_html)
     
     
-    with gr.Tab('vHTS Analysis'):
+    with gr.Tab('📈 vHTS Analysis'):
         vhts_name_df_map, vhts_name_file_map = gr.State({}), gr.State({})
         with gr.Row():
             refresh_vhts_button = gr.Button('Refresh', scale=1)
@@ -2583,7 +2583,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                        vhts_pae_plot, vhts_pde_plot, vhts_plddt_plot, vhts_header])
     
     
-    with gr.Tab('Boltz Output'):
+    with gr.Tab('📥 Boltz Output'):
         all_zipped_files_map = gr.State({})
         with gr.Row():
             refresh_button = gr.Button('Refresh', scale=1)
@@ -2638,7 +2638,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                          outputs=[all_zipped_files_map])
     
     
-    with gr.Tab('Boltz Paramters'):
+    with gr.Tab('⚙️ Boltz Paramters'):
         with gr.Row():
             with gr.Column():
                 gr.Markdown('<span style="font-size:20px; font-weight:bold;">System setting</span>')
@@ -2663,7 +2663,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         download_model_weight.click(manual_download_boltz_weights, outputs=download_model_weight)
     
     
-    with gr.Tab('Utilities'):
+    with gr.Tab('🧰 Utilities'):
         with gr.Accordion('Inverse Complement Nucleic Acid', open=False):
             inp_nucleic_acid = gr.TextArea(label='Input DNA/RNA', lines=3, interactive=True)
             with gr.Row(equal_height=True):
