@@ -1,4 +1,4 @@
-gradio==5.33.0
+gradio==5.35.0
 plotly
 git+https://github.com/jwohlwend/boltz.git@f957d1c40818a2085da44fff1e2928d479ba47a1
 # boltz
