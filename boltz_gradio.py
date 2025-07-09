@@ -929,10 +929,10 @@ def read_output_files(read_vhts: bool):
                         # Default back to using single model.
                         # This shouldn't happen unless user decide to load the structure 
                         # before the entire prediction is done.
-                        combined_cif_pth = os.path.join(pred_dir, f'{name}_model_{i}.cif')
+                        combined_cif_pth = None
                     for i in range(total_models):
                         cnf_pth  = os.path.join(pred_dir, f'confidence_{name}_model_{i}.json')
-                        mdl_pth  = combined_cif_pth
+                        mdl_pth  = os.path.join(pred_dir, f'{name}_model_{i}.cif') if combined_cif_pth is None else combined_cif_pth
                         pae_pth  = os.path.join(pred_dir, f'pae_{name}_model_{i}.npz')
                         pde_pth  = os.path.join(pred_dir, f'pde_{name}_model_{i}.npz')
                         plddt_pth  = os.path.join(pred_dir, f'plddt_{name}_model_{i}.npz')
