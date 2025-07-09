@@ -490,11 +490,11 @@ def execute_multi_boltz(all_files: list[str],
                    d in dir_names_output_map]
         total = len(futures)
         n = 0
-        progress_text = f'Writing combined model: 0/{total}'
+        progress_text = f'Writing combined model: {n:>{len(str(total))}}/{total}'
         yield gr.update(), full_output + progress_text
         for f in as_completed(futures):
             n += 1
-            progress_text = f'Writing combined model: {n}/{total}'
+            progress_text = f'Writing combined model: {n:>{len(str(total))}}/{total}'
             yield gr.update(), full_output + progress_text
     
     full_output += f'{progress_text}\nCombined model written!'
@@ -616,12 +616,12 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                    d in dir_names_output_map]
         total = len(futures)
         n = 0
-        progress_text = f'Post-Processing Progress: {n} / {total}'
+        progress_text = f'Post-Processing Progress: {n:>{len(str(total))}} / {total}'
         yield gr.update(), full_output + progress_text
         for f in as_completed(futures):
             err = f.result()
             n += 1
-            progress_text = f'Post-Processing Progress: {n} / {total}'
+            progress_text = f'Post-Processing Progress: {n:>{len(str(total))}} / {total}'
             yield gr.update(), full_output + progress_text
             
     progress_text += '\nvHTS done!'
@@ -816,22 +816,21 @@ def recover_and_combine_cif(cif_files: list, smiles: str, ligand_chain: str, out
         df = df.reset_index()
         full_cols = df.columns
         df['All Passes'] = df[target_col].sum(1) == len(target_col)
-        df['Rank'] = df['molecule'].apply(lambda x: f"Rank_{int(x.rsplit('_', 1)[-1])+1}")
-        df['Rank_N'] = df['Rank'].apply(lambda x: int(x.rsplit('_', 1)[-1]))
-        all_ranks = df['Rank_N'].to_list()
+        df['Rank'] = df['molecule'].apply(lambda x: int(x.rsplit('_', 1)[-1])+1)
+        all_ranks = df['Rank'].to_list()
         
         for i in range(1, total_files+1):
             if i not in all_ranks:
                 new_row = {c: np.nan for c in full_cols}
-                new_row.update({'Rank': f'Rank_{i}', 'Rank_N': i, 'All Passes': False})
+                new_row.update({'Rank': i, 'All Passes': False})
                 df.loc[len(df)] = new_row
-        df = df.sort_values('Rank_N')
+        df = df.sort_values('Rank')
         
         final_col = ['Rank'] + target_col + ['All Passes']
         df = df[final_col].astype({c: 'boolean' for c in final_col if c != 'Rank'})
     else:
         rows = {c: [np.nan]*total_files for c in target_col}
-        rows['Rank'] = [f'Rank_{i}' for i in range(1, total_files+1)]
+        rows['Rank'] = [i for i in range(1, total_files+1)]
         rows['All Passes'] = [False] * total_files
         df = pd.DataFrame(rows)
     df.to_csv(csv_name, index=False)
@@ -1171,7 +1170,7 @@ def read_vhts_directory():
                     docked_dir = Path(os.path.join(pred_dir, n))
                     combined_cif_pth = os.path.join(docked_dir, f'{n}_model_combined.cif')
                     if not os.path.exists(combined_cif_pth):    # Same logic as the general result visualization
-                        combined_cif_pth = os.path.join(docked_dir, f'{name}_model_1.cif')
+                        combined_cif_pth = os.path.join(docked_dir, f'{n}_model_0.cif')
                     if os.path.isdir(docked_dir):
                         conf_pth   = docked_dir / f'confidence_{n}_model_0.json'
                         aff_pth    = docked_dir / f'affinity_{n}.json'
@@ -1188,7 +1187,7 @@ def read_vhts_directory():
                             binding_prob = aff_data['affinity_probability_binary']
                         if os.path.isfile(pose_bust):
                             df = pd.read_csv(pose_bust)
-                            rank_1_pass = df[df['Rank'] == 'Rank_1']['All Passes'].to_list()[0]
+                            rank_1_pass = df[df['Rank'] == 1]['All Passes'].to_list()[0]
                         else:
                             rank_1_pass = float('nan')
                             pose_bust = None
