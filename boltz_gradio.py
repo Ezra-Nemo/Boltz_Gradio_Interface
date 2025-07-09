@@ -1173,7 +1173,7 @@ def read_vhts_directory():
                     docked_dir = Path(os.path.join(pred_dir, n))
                     combined_cif_pth = os.path.join(docked_dir, f'{n}_model_combined.cif')
                     if not os.path.exists(combined_cif_pth):    # Same logic as the general result visualization
-                        combined_cif_pth = os.path.join(docked_dir, f'{name}_model_{i}.cif')
+                        combined_cif_pth = os.path.join(docked_dir, f'{name}_model_1.cif')
                     if os.path.isdir(docked_dir):
                         conf_pth   = docked_dir / f'confidence_{n}_model_0.json'
                         aff_pth    = docked_dir / f'affinity_{n}.json'
@@ -2603,7 +2603,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                              scale=3, file_count='single',
                                              file_types=['.zip'], interactive=False)
         
-        with gr.Accordion('Directory List', open=False):
+        with gr.Accordion('Directory List', open=True):
             output_map = _extract_pred_dirs()
             download_file_pth_map = gr.State(output_map)
             output_directory_options = gr.Dropdown(choices=list(output_map),
