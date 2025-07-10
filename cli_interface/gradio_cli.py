@@ -81,6 +81,9 @@ output_dir = os.path.join(curr_dir, 'boltz_output')
 # shutil.rmtree(output_dir)
 # output_dir = os.path.join(curr_dir, 'boltz_vhts')
 os.makedirs(output_dir, exist_ok=True)
+for f in os.listdir(output_dir):
+    if f == '__MACOSX':
+        shutil.rmtree(os.path.join(output_dir, f))
 
 template_dir = os.path.join(curr_dir, 'templates')
 os.makedirs(template_dir, exist_ok=True)
