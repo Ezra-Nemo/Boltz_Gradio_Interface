@@ -1,4 +1,4 @@
-import os, io, re, uuid, json, time, torch, base64, webview
+import os, io, re, uuid, json, time, torch, base64, webview, signal
 import shutil, zipfile, requests, tempfile, subprocess, threading, contextlib
 import numpy as np
 import gradio as gr
@@ -1606,6 +1606,12 @@ def remove_output_dirs(names: list, name_pth_map: dict):
                 print('This will be removed (multiple): ', pth)
                 shutil.rmtree(pth)
 
+active_clients = set()
+def on_unload():
+    active_clients.discard("session-id")
+    if not active_clients:
+        os.kill(os.getpid(), signal.SIGINT)
+
 ### Boltz Interface ###
 with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
     gr.Markdown('<span style="font-size:25px; font-weight:bold;">Boltz Interface</span>')
@@ -2752,6 +2758,7 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                                      rm_output_file_pth_map])
             rm_selected_button.click(remove_output_dirs, inputs=[rm_output_options, rm_output_file_pth_map])
     
+    Interface.unload(on_unload)
     
     #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####
     def change_sequence_label(curr_entity: str, sequence: str, cyclic_ckbox: bool):
@@ -2814,13 +2821,22 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         return old_dict, gr.update(choices=list(old_dict)), gr.update(choices=list(old_dict))
 
 def main():
+    import argparse
+    
     def run_gradio():
         Interface.launch(server_name="0.0.0.0", server_port=7860)
     
-    threading.Thread(target=concurrent_download_model_weight, daemon=True).start()
-    threading.Thread(target=run_gradio, daemon=True).start()
-    window = webview.create_window('Local Boltz Interface', "http://0.0.0.0:7860", maximized=True)
-    webview.start()
+    parser = argparse.ArgumentParser(description="Launch Boltz Interface")
+    parser.add_argument("--local_browser", action="store_true", help="Run the GUI in user's browser")
+    
+    args = parser.parse_args()
+    
+    if not args.local_browser:
+        threading.Thread(target=run_gradio, daemon=True).start()
+        webview.create_window('Local Boltz Interface', "http://0.0.0.0:7860", maximized=True)
+        webview.start()
+    else:
+        Interface.launch(server_name="0.0.0.0", server_port=7860, inbrowser=True)
 
 if __name__ == '__main__':
     main()
