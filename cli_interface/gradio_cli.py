@@ -78,6 +78,7 @@ if cuda_available:
 
 curr_dir = os.path.dirname(__file__)
 output_dir = os.path.join(curr_dir, 'boltz_output')
+# shutil.rmtree(output_dir)
 # output_dir = os.path.join(curr_dir, 'boltz_vhts')
 os.makedirs(output_dir, exist_ok=True)
 
@@ -1213,7 +1214,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
            gr.DataFrame(value=pair_chain_conf,
                         headers=[f'{i+1}' for i in range(len(chain_conf))],
                         show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 5
+           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 4
     
     length_split = [0]
     chain_entity_map = {}
@@ -1546,6 +1547,61 @@ def draw_smiles_3d(smiles_str: str):
             mol = Chem.RemoveHs(new_mol)
         mol_str = Chem.MolToMolBlock(mol)
         yield get_mol_molstar_html(mol_str), gr.update()
+
+def choose_dir():
+    result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+    if not result:
+        yield 'Cancelled!'
+    else:
+        source_dir = result[0]
+        child_dirs = [os.path.join(source_dir, d) for d in os.listdir(source_dir) if not d.startswith('.')]
+        yield f'0 / {len(child_dirs)}'
+        if len(child_dirs) == 1:
+            target_dir = os.path.join(output_dir, os.path.basename(source_dir))
+            shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+            yield '1 / 1'
+        else:
+            n = 0
+            for child in child_dirs:
+                target_dir = os.path.join(output_dir, os.path.basename(child))
+                shutil.copytree(child, target_dir, dirs_exist_ok=True)
+                n += 1
+                yield f'{n} / {len(child_dirs)}'
+                
+def choose_zips():
+    result = webview.windows[0].create_file_dialog(webview.OPEN_DIALOG, allow_multiple=True,
+                                                   file_types=('ZIP Files (*.zip)',))
+    if not result:
+        yield 'Cancelled!'
+    n = 0
+    yield f'{n} / {len(result)}'
+    for zipped_file in result:
+        with zipfile.ZipFile(zipped_file, 'r') as zip_ref:
+            zip_ref.extractall(output_dir)
+        n += 1
+        yield f'{n} / {len(result)}'
+
+def update_output_dropdown():
+    name_path_map = _extract_pred_dirs()
+    return gr.update(choices=list(name_path_map)), name_path_map
+
+def remove_output_dirs(names: list, name_pth_map: dict):
+    for n in names:
+        pth = Path(name_pth_map[n])
+        is_vhts = True
+        if pth.name != 'predictions':
+            is_vhts = False
+        if is_vhts:
+            print('This will be removed (vHTS): ', pth.parent.parent)
+            shutil.rmtree(pth.parent.parent)
+        else:
+            sub_dirs = [d for d in os.listdir(pth.parent) if not d.startswith('.')]
+            if len(sub_dirs) == 1:
+                print('This will be removed (single): ', pth.parent.parent.parent)
+                shutil.rmtree(pth.parent.parent.parent)
+            else:
+                print('This will be removed (multiple): ', pth)
+                shutil.rmtree(pth)
 
 ### Boltz Interface ###
 with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
@@ -2670,6 +2726,28 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                               column_widths=['80%', '20%'])
             smiles_3d_ligand.submit(draw_smiles_3d, inputs=smiles_3d_ligand,
                                     outputs=[smiles_3d_viewer, smiles_3d_info])
+        
+        with gr.Accordion('Edit Output', open=False):
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown('Import Boltz Results')
+                    select_boltz_output_dir = gr.Button('Input Boltz Output Folder')
+                    select_boltz_output_zip = gr.Button('Input Boltz Output ZIP Files')
+                    move_boltz_output_progress = gr.Text(label='Progress')
+                with gr.Column():
+                    rm_output_file_pth_map = gr.State(output_map)
+                    gr.Markdown('Remove Boltz Results')
+                    refresh_rm_button = gr.Button('Refresh')
+                    rm_output_options = gr.Dropdown(choices=list(output_map),
+                                                    multiselect=True,
+                                                    interactive=True)
+                    rm_selected_button = gr.Button('Remove Selected')
+            
+            select_boltz_output_dir.click(choose_dir,  outputs=move_boltz_output_progress)
+            select_boltz_output_zip.click(choose_zips, outputs=move_boltz_output_progress)
+            refresh_rm_button.click(update_output_dropdown, outputs=[rm_output_options,
+                                                                     rm_output_file_pth_map])
+            rm_selected_button.click(remove_output_dirs, inputs=[rm_output_options, rm_output_file_pth_map])
     
     
     #####–––––––––––––––––––––––––––––––––––––––––––––––––––––––––––#####

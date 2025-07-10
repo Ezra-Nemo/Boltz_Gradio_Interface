@@ -1253,7 +1253,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
            gr.DataFrame(value=pair_chain_conf,
                         headers=[f'{i+1}' for i in range(len(chain_conf))],
                         show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 5
+           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 4
     
     length_split = [0]
     chain_entity_map = {}

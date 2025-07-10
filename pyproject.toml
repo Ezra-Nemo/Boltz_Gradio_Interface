@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Boltz_Gradio_Interface"
+name = "Boltz_Interface"
 version = "0.1.0"
 dependencies = [
         "gradio==5.35.0",
