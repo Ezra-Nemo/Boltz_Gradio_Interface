@@ -18,7 +18,7 @@ from pathlib import Path
 from boltz.main import download_boltz2
 from boltz.data import const
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 from functools import partial
 
@@ -485,7 +485,7 @@ def execute_multi_boltz(all_files: list[str],
     progress_text = f'Writing combined model: 0/{len(dir_names_output_map)}'
     yield gr.update(), full_output + progress_text
     
-    with ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         futures = [executor.submit(combine_and_write_cif, d['cifs'], d['out']) for 
                    d in dir_names_output_map]
         total = len(futures)
@@ -611,7 +611,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                                                        key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))],
                              'smiles': dir_smiles_dict[out_pred_dir/n]} 
                             for n in os.listdir(out_pred_dir) if os.path.isdir(out_pred_dir / n)]
-    with ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         futures = [executor.submit(recover_and_combine_cif, d['cifs'], d['smiles'], ligand_chain, d['out']) for 
                    d in dir_names_output_map]
         total = len(futures)
@@ -875,6 +875,7 @@ def get_general_molstar_html(mmcif_base64, mdl_idx, color='chain-id'):
                                 {{ model: {{ modelIndex: {mdl_idx} }}, 
                                    representationPresetParams: {{ theme: {{ globalName: "{color}" }} }} 
                                 }})
+                            
                             window.trajectory = trajectory;
                             window.viewer     = viewer;
                             window.modelIndex = {mdl_idx};
@@ -2775,10 +2776,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
 
 if __name__ == '__main__':
     import argparse
-
+    
     parser = argparse.ArgumentParser(description="Launch Boltz Gradio interface")
     parser.add_argument("--share", action="store_true", help="Enable Gradio sharing (share=True)")
+    parser.add_argument("--inbrowser", action="store_true", help="Start Gradio in current default browser (inbrowser=True)")
     args = parser.parse_args()
     
     threading.Thread(target=concurrent_download_model_weight, daemon=True).start()
-    Interface.launch(server_name="0.0.0.0", server_port=7860, share=args.share)
+    Interface.launch(server_name="0.0.0.0", server_port=7860, share=args.share, inbrowser=args.inbrowser)
