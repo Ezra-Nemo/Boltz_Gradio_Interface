@@ -71,6 +71,7 @@ footer { display: none !important; }
 .small-upload-style .wrap {font-size: 10px; !important}
 .small-upload-style .icon-wrap svg {display: none; !important}
 .small-header-table tr[slot="thead"] th .cell-wrap {font-size: 10px; !important}
+.centered-checkbox {display: flex; align-items: center; padding: 0 10px;}
 """
 
 device_num = 1
@@ -270,20 +271,24 @@ def read_tempaltes(files: list[str], old_cif_name_chain_dict: dict,
                 break
         old_cif_name_chain_dict[name] = sorted(list(unique_chains))
         old_cif_name_path_dict[name] = new_template_pth
-        old_template_name_setting_dict[name] = {'chain_id': [], 'template_id': []}
+        old_template_name_setting_dict[name] = {'chain_id': [], 'template_id': [], 'force': False, 'threshold': -1}
         if name not in old_usage_dict:
             old_usage_dict[name] = True
     return (gr.update(choices=list(old_cif_name_chain_dict), value=list(old_cif_name_chain_dict)[0]),
             old_cif_name_chain_dict, old_cif_name_path_dict, old_usage_dict,
             gr.update(interactive=bool(old_usage_dict), value=old_usage_dict[list(old_cif_name_chain_dict)[0]]),
-            old_template_name_setting_dict)
+            old_template_name_setting_dict, gr.update(value=False, interactive=bool(old_usage_dict)),
+            gr.update(value=-1, interactive=bool(old_usage_dict)))
 
 def update_template_chain_ids_and_settings(curr_usage_bool: bool, target_chain_ids: list, template_chain_ids: list,
+                                           force_template: bool, template_threshold: int,
                                            curr_name: str,
                                            template_name_usage_dict: dict, template_name_setting_dict: dict):
     template_name_usage_dict[curr_name] = curr_usage_bool
     template_name_setting_dict[curr_name]['chain_id'] = target_chain_ids
     template_name_setting_dict[curr_name]['template_id'] = template_chain_ids
+    template_name_setting_dict[curr_name]['force'] = force_template
+    template_name_setting_dict[curr_name]['threshold'] = template_threshold
     return template_name_usage_dict, template_name_setting_dict
 
 def update_template_dropdown(curr_name: str, template_name_chain_dict: dict,
@@ -291,7 +296,9 @@ def update_template_dropdown(curr_name: str, template_name_chain_dict: dict,
     return (template_name_usage_dict[curr_name],
             template_name_setting_dict[curr_name]['chain_id'],
             gr.update(value=template_name_setting_dict[curr_name]['template_id'],
-                      choices=template_name_chain_dict[curr_name]))
+                      choices=template_name_chain_dict[curr_name]),
+            gr.update(value=template_name_setting_dict[curr_name]['force']),
+            gr.update(value=template_name_setting_dict[curr_name]['threshold']))
 
 def update_bond_sequence_length_with_chain(sel_chain: str, mapping_dict: dict):
     data_dict = mapping_dict.get(sel_chain, None)
@@ -1599,17 +1606,21 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         chain_res_dict = gr.State({})
         with gr.Accordion('Template', open=False):
             with gr.Row():
-                with gr.Group():
+                with gr.Column():
                     template_file = gr.Files(label='mmCIF tempalte(s)', file_types=['.cif'],
                                                 interactive=True)
                     template_dropdown = gr.Dropdown(label='Template Name', interactive=True)
-                with gr.Group():
-                    use_template_chekcbox = gr.Checkbox(False, label='Use template',
-                                                        interactive=False)
+                with gr.Column():
+                    with gr.Row():
+                        use_template_checkbox = gr.Checkbox(False, label='Use template',
+                                                            interactive=False)
+                        force_template_checkbox = gr.Checkbox(False, label='Force', interactive=False)
                     target_chain_ids   = gr.Dropdown(label='Target Chain IDs',
                                                         multiselect=True, interactive=True)
                     template_chain_ids = gr.Dropdown(label='Template Chain IDs',
                                                         multiselect=True, interactive=True)
+                    template_threshold = gr.Number(None, label='Threshold (Å)', info='-1 = no threshold',
+                                                   interactive=False, minimum=-1)
         
         with gr.Accordion('Constraints', open=False):
             with gr.Row(equal_height=True):
@@ -1640,13 +1651,18 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 
                 with gr.Column(scale=1):
                     gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket conditioning</span>')
-                    pocket_binder = gr.Dropdown(label='Binder',
-                                                interactive=True)
-                    pocket_text = gr.Text(label='Target Pockets',
-                                        placeholder='B:12,B:23',
-                                        interactive=True)
-                    pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                    interactive=True, minimum=1)
+                    with gr.Group():
+                        pocket_binder = gr.Dropdown(label='Binder',
+                                                    interactive=True)
+                        pocket_text = gr.Text(label='Target Pockets',
+                                            placeholder='B:12,B:23',
+                                            interactive=True)
+                        with gr.Row():
+                            pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                            interactive=True, minimum=0,
+                                                            min_width=20, scale=2)
+                            pocket_force_checkbox = gr.Checkbox(False, label='Force', min_width=20,
+                                                                scale=1, elem_classes='centered-checkbox')
                 
                 with gr.Column(scale=2):
                     gr.Markdown('<span style="font-size:15px; font-weight:bold;">Contact Conditioning</span>')
@@ -1659,8 +1675,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                             contact_2_dropdown = gr.Dropdown(label='Chain 2',
                                                             interactive=True)
                             contact_2_text = gr.Text(label='Reside IDX/Atom Name')
-                        contact_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                        interactive=True, minimum=1)
+                        with gr.Row():
+                            contact_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                             interactive=True, minimum=0, min_width=20, scale=2)
+                            contact_force_checkbox = gr.Checkbox(False, label='Force', min_width=20, scale=1,
+                                                                 elem_classes='centered-checkbox')
         
         with gr.Row():
             with gr.Column():
@@ -1775,8 +1794,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                             contact_1_dropdown, contact_2_dropdown,
                                             target_chain_ids])
             
-            def write_yaml_func(binder, target, pocket_max_d, aff_binder,
-                                cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist,
+            def write_yaml_func(binder, target, pocket_max_d, pocket_f, aff_binder,
+                                cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist, contact_f,
                                 template_name_path_dict, template_name_usage_dict,
                                 template_name_setting_dict,
                                 bond_atom1_chain, bond_atom1_res, bond_atom1_name,
@@ -1795,10 +1814,13 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                     'E.g., B:12,C:13')
                         c, r = c_res.split(':')
                         contacts.append([c, int(r)])
+                    d = {'pocket': {'binder'      : binder,
+                                    'contacts'    : contacts,
+                                    'force'       : pocket_f}}
+                    if pocket_max_d:
+                        d['pocket']['max_distance'] = pocket_max_d
                     data_dict = {'sequences': [],
-                                 'constraints': [{'pocket': {'binder'      : binder,
-                                                             'contacts'    : contacts,
-                                                             'max_distance': pocket_max_d}}]}
+                                 'constraints': [d]}
                 else:
                     data_dict = {'sequences': []}
                 
@@ -1812,7 +1834,9 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         cont_2_r = int(cont_2_r)
                     contact_dict = {'contact': {'token1': [cont_1_c, cont_1_r],
                                                 'token2': [cont_2_c, cont_2_r],
-                                                'max_distance': contact_max_dist}}
+                                                'force'       : contact_f}}
+                    if contact_max_dist:
+                        contact_dict['contact']['max_distance'] = contact_max_dist
                     if 'constraints' in data_dict:
                         data_dict['constraints'].append(contact_dict)
                     else:
@@ -1838,6 +1862,9 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                     if template_name_usage_dict[name]:
                         curr_template = {'cif': template_name_path_dict[name]}
                         chain_template_id_dict = template_name_setting_dict[name]
+                        curr_template['force'] = chain_template_id_dict['force']
+                        if chain_template_id_dict['threshold'] > -1:
+                            curr_template['threshold'] = chain_template_id_dict['threshold']
                         if chain_template_id_dict['chain_id']:
                             curr_template['chain_id'] = chain_template_id_dict['chain_id']
                         if chain_template_id_dict['template_id']:
@@ -1930,10 +1957,10 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 
             write_yaml_button.click(write_yaml_func,
                                     inputs=[pocket_binder, pocket_text,
-                                            pocket_max_distance, affinity_binder,
+                                            pocket_max_distance, pocket_force_checkbox, affinity_binder,
                                             contact_1_dropdown, contact_1_text,
                                             contact_2_dropdown, contact_2_text,
-                                            contact_max_distance,
+                                            contact_force_checkbox, contact_max_distance,
                                             template_name_path_dict,
                                             template_name_usage_dict, 
                                             template_name_setting_dict,
@@ -1961,24 +1988,38 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                      template_name_usage_dict, template_name_setting_dict],
                              outputs=[template_dropdown,
                                       template_name_chain_dict, template_name_path_dict,
-                                      template_name_usage_dict, use_template_chekcbox,
-                                      template_name_setting_dict])
-        use_template_chekcbox.input(update_template_chain_ids_and_settings,
-                                    inputs=[use_template_chekcbox, target_chain_ids, template_chain_ids,
+                                      template_name_usage_dict, use_template_checkbox,
+                                      template_name_setting_dict, force_template_checkbox, template_threshold])
+        use_template_checkbox.input(update_template_chain_ids_and_settings,
+                                    inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                            force_template_checkbox, template_threshold,
                                             template_dropdown, template_name_usage_dict, template_name_setting_dict],
                                     outputs=[template_name_usage_dict, template_name_setting_dict])
         target_chain_ids.input(update_template_chain_ids_and_settings,
-                               inputs=[use_template_chekcbox, target_chain_ids, template_chain_ids,
+                               inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                       force_template_checkbox, template_threshold,
                                        template_dropdown, template_name_usage_dict, template_name_setting_dict],
                                outputs=[template_name_usage_dict, template_name_setting_dict])
         template_chain_ids.input(update_template_chain_ids_and_settings,
-                                 inputs=[use_template_chekcbox, target_chain_ids, template_chain_ids,
+                                 inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                         force_template_checkbox, template_threshold,
+                                         template_dropdown, template_name_usage_dict, template_name_setting_dict],
+                                 outputs=[template_name_usage_dict, template_name_setting_dict])
+        force_template_checkbox.input(update_template_chain_ids_and_settings,
+                                 inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                         force_template_checkbox, template_threshold,
+                                         template_dropdown, template_name_usage_dict, template_name_setting_dict],
+                                 outputs=[template_name_usage_dict, template_name_setting_dict])
+        template_threshold.input(update_template_chain_ids_and_settings,
+                                 inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                         force_template_checkbox, template_threshold,
                                          template_dropdown, template_name_usage_dict, template_name_setting_dict],
                                  outputs=[template_name_usage_dict, template_name_setting_dict])
         template_dropdown.change(update_template_dropdown,
                                  inputs=[template_dropdown, template_name_chain_dict,
                                          template_name_usage_dict, template_name_setting_dict],
-                                 outputs=[use_template_chekcbox, target_chain_ids, template_chain_ids])
+                                 outputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
+                                          force_template_checkbox, template_threshold])
         
         single_complex_name.input(check_yaml_strings,
                                   inputs=[yaml_text, single_complex_name],
@@ -2146,22 +2187,31 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                     interactive=True)
                         vhts_template_dropdown = gr.Dropdown(label='Template Name', interactive=True)
                     with gr.Group():
-                        vhts_use_template_chekcbox = gr.Checkbox(False, label='Use template',
-                                                                    interactive=False)
+                        with gr.Row():
+                            vhts_use_template_chekcbox = gr.Checkbox(False, label='Use template',
+                                                                        interactive=False)
+                            vhts_force_template_checkbox = gr.Checkbox(False, label='Force', interactive=False)
                         vhts_target_chain_ids   = gr.Dropdown(label='Target Chain IDs',
                                                                 multiselect=True, interactive=True)
                         vhts_template_chain_ids = gr.Dropdown(label='Template Chain IDs',
                                                                 multiselect=True, interactive=True)
+                        vhts_template_threshold = gr.Number(None, label='Threshold (Å)', info='-1 = no threshold',
+                                                            interactive=False, minimum=-1)
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown('<span style="font-size:15px; font-weight:bold;">Pocket Conditioning & Entity Count</span>')
-                    vhts_pocket_text = gr.Text(label='Target Pockets',
-                                               placeholder='B:12,B:23',
-                                               interactive=True)
-                    vhts_pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                         interactive=True, minimum=1)
-                    vhts_entity_number = gr.Number(1, label='Total Entity',
-                                                   interactive=True, minimum=1, step=1)
+                    with gr.Group():
+                        vhts_pocket_text = gr.Text(label='Target Pockets',
+                                                placeholder='B:12,B:23',
+                                                interactive=True)
+                        with gr.Row():
+                            vhts_pocket_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                                interactive=True, minimum=0,
+                                                                min_width=20, scale=2)
+                            vhts_pocket_force_checkbox = gr.Checkbox(False, label='Force', min_width=20,
+                                                                     scale=1, elem_classes='centered-checkbox')
+                        vhts_entity_number = gr.Number(1, label='Total Entity',
+                                                    interactive=True, minimum=1, step=1)
                 with gr.Column(scale=1):
                     gr.Markdown('<span style="font-size:15px; font-weight:bold;">Contact Conditioning</span>')
                     with gr.Group():
@@ -2173,8 +2223,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                             vhts_contact_2_dropdown = gr.Dropdown(label='Chain 2',
                                                                   interactive=True)
                             vhts_contact_2_text = gr.Text(label='Reside')
-                        vhts_contact_max_distance = gr.Number(6, label='Max Distance (Å)',
-                                                              interactive=True, minimum=1)
+                        with gr.Row():
+                            vhts_contact_max_distance = gr.Number(6, label='Max Distance (Å)',
+                                                                interactive=True, minimum=0, min_width=20, scale=2)
+                            vhts_contact_force_checkbox = gr.Checkbox(False, label='Force', min_width=20,
+                                                                      scale=1, elem_classes='centered-checkbox')
             
             def vhts_update_all_chains_dropdown(*all_entity_chain_values):
                 all_chains = set()
@@ -2245,14 +2298,15 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                                 outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
                                                          vhts_target_chain_ids])
                 
-                def write_yaml_func(binder, target, pocket_max_d, aff_binder,
-                                    cont_1_c, cont_1_r, cont_2_c, cont_2_r,
+                def write_yaml_func(binder, target, pocket_max_d, pocket_f, aff_binder,
+                                    cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist, contact_f,
                                     template_name_path_dict, template_name_usage_dict,
                                     template_name_setting_dict,
                                     *all_components):
                     all_components = list(all_components)
                     if not binder:
                         return 'Ligand chain must be provided!'
+                    
                     if binder and target:
                         contacts = []
                         for c_res in target.split(','):
@@ -2262,18 +2316,30 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                                         'E.g., B:12,C:13')
                             c, r = c_res.split(':')
                             contacts.append([c, int(r)])
+                        d = {'pocket': {'binder'      : binder,
+                                        'contacts'    : contacts,
+                                        'force'       : pocket_f}}
+                        if pocket_max_d:
+                            d['pocket']['max_distance'] = pocket_max_d
                         data_dict = {'sequences': [],
-                                    'constraints': [{'pocket': {'binder'      : binder,
-                                                                'contacts'    : contacts,
-                                                                'max_distance': pocket_max_d}}]}
+                                     'constraints': [d]}
                     else:
                         data_dict = {'sequences': []}
                     if aff_binder:
                         data_dict.update({'properties': [{'affinity': {'binder': aff_binder}}]})
                     
                     if cont_1_c and cont_1_r.strip() and cont_2_c and cont_2_r.strip():
-                        contact_dict = {'contact': {'token1': [cont_1_c, cont_1_r.strip()],
-                                                    'token2': [cont_2_c, cont_2_r.strip()],}}
+                        cont_1_r = cont_1_r.strip()
+                        cont_2_r = cont_2_r.strip()
+                        if cont_1_r.isdigit():
+                            cont_1_r = int(cont_1_r)
+                        if cont_2_r.isdigit():
+                            cont_2_r = int(cont_2_r)
+                        contact_dict = {'contact': {'token1': [cont_1_c, cont_1_r],
+                                                    'token2': [cont_2_c, cont_2_r],
+                                                    'force' : contact_f}}
+                        if contact_max_dist:
+                            contact_dict['contact']['max_distance'] = contact_max_dist
                         if 'constraints' in data_dict:
                             data_dict['constraints'].append(contact_dict)
                         else:
@@ -2284,6 +2350,9 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                         if template_name_usage_dict[name]:
                             curr_template = {'cif': template_name_path_dict[name]}
                             chain_template_id_dict = template_name_setting_dict[name]
+                            curr_template['force'] = chain_template_id_dict['force']
+                            if chain_template_id_dict['threshold'] > -1:
+                                curr_template['threshold'] = chain_template_id_dict['threshold']
                             if chain_template_id_dict['chain_id']:
                                 curr_template['chain_id'] = chain_template_id_dict['chain_id']
                             if chain_template_id_dict['template_id']:
@@ -2375,9 +2444,11 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                 
                 vhts_process_file_demo_button.click(write_yaml_func,
                                                     inputs=[vhts_ligand_chain_text, vhts_pocket_text,
-                                                            vhts_pocket_max_distance, vhts_ligand_chain_text,
+                                                            vhts_pocket_max_distance, vhts_pocket_force_checkbox,
+                                                            vhts_ligand_chain_text,
                                                             vhts_contact_1_dropdown, vhts_contact_1_text,
                                                             vhts_contact_2_dropdown, vhts_contact_2_text,
+                                                            vhts_contact_max_distance, vhts_contact_force_checkbox, 
                                                             vhts_template_name_path_dict,
                                                             vhts_template_name_usage_dict,
                                                             vhts_template_name_setting_dict,
@@ -2404,25 +2475,43 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
                              outputs=[vhts_template_dropdown,
                                       vhts_template_name_chain_dict, vhts_template_name_path_dict,
                                       vhts_template_name_usage_dict, vhts_use_template_chekcbox,
-                                      vhts_template_name_setting_dict])
+                                      vhts_template_name_setting_dict, vhts_force_template_checkbox, vhts_template_threshold])
         vhts_use_template_chekcbox.input(update_template_chain_ids_and_settings,
                                     inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids,
                                             vhts_template_chain_ids,
+                                            vhts_force_template_checkbox, vhts_template_threshold,
                                             vhts_template_dropdown, vhts_template_name_usage_dict,
                                             vhts_template_name_setting_dict],
                                     outputs=[vhts_template_name_usage_dict, vhts_template_name_setting_dict])
-        target_chain_ids.input(update_template_chain_ids_and_settings,
-                               inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids, vhts_template_chain_ids,
+        vhts_target_chain_ids.input(update_template_chain_ids_and_settings,
+                               inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids,
+                                       vhts_template_chain_ids,
+                                       vhts_force_template_checkbox, vhts_template_threshold,
                                        vhts_template_dropdown, vhts_template_name_usage_dict, vhts_template_name_setting_dict],
                                outputs=[vhts_template_name_usage_dict, vhts_template_name_setting_dict])
-        template_chain_ids.input(update_template_chain_ids_and_settings,
-                                 inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids, vhts_template_chain_ids,
+        vhts_template_chain_ids.input(update_template_chain_ids_and_settings,
+                                 inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids,
+                                         vhts_template_chain_ids,
+                                         vhts_force_template_checkbox, vhts_template_threshold,
                                          vhts_template_dropdown, vhts_template_name_usage_dict, vhts_template_name_setting_dict],
                                  outputs=[vhts_template_name_usage_dict, vhts_template_name_setting_dict])
-        template_dropdown.change(update_template_dropdown,
+        vhts_force_template_checkbox.input(update_template_chain_ids_and_settings,
+                                 inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids,
+                                         vhts_template_chain_ids,
+                                         vhts_force_template_checkbox, vhts_template_threshold,
+                                         vhts_template_dropdown, vhts_template_name_usage_dict, vhts_template_name_setting_dict],
+                                 outputs=[vhts_template_name_usage_dict, vhts_template_name_setting_dict])
+        vhts_template_threshold.input(update_template_chain_ids_and_settings,
+                                 inputs=[vhts_use_template_chekcbox, vhts_target_chain_ids,
+                                         vhts_template_chain_ids,
+                                         vhts_force_template_checkbox, vhts_template_threshold,
+                                         vhts_template_dropdown, vhts_template_name_usage_dict, vhts_template_name_setting_dict],
+                                 outputs=[vhts_template_name_usage_dict, vhts_template_name_setting_dict])
+        vhts_template_dropdown.change(update_template_dropdown,
                                  inputs=[vhts_template_dropdown, vhts_template_name_chain_dict,
                                          vhts_template_name_usage_dict, vhts_template_name_setting_dict],
-                                 outputs=[vhts_use_template_chekcbox, vhts_target_chain_ids, vhts_template_chain_ids])
+                                 outputs=[vhts_use_template_chekcbox, vhts_target_chain_ids, vhts_template_chain_ids, 
+                                          vhts_force_template_checkbox, vhts_template_threshold,])
         
         vhts_boltz_log = gr.Textbox(label='Prediction Log', lines=10, max_lines=10,
                                     autofocus=False, elem_classes='log', show_copy_button=True)
