@@ -63,6 +63,13 @@ property_functions = {'Molecular Weight'  : Descriptors.MolWt,
                       'Natural Product-likeness Score (NP)': partial(npscorer.scoreMol, fscore=fscore),
                       'Synthetic Accessibility Score (SA)': sascorer.calculateScore}
 
+file_extract_matching_map = {'Structure' : ['.cif', '.sdf'],
+                             'Confidence': ['confidence_'],
+                             'Affinity'  : ['affinity_'],
+                             'PAE'       : ['pae_'],
+                             'PDE'       : ['pde_'],
+                             'pLDDT'     : ['plddt_']}
+
 css = """
 footer { display: none !important; }
 .sequence textarea {font-family: Courier New, Courier, monospace; !important}
@@ -1366,15 +1373,44 @@ def zip_selected_files(all_files_and_dirs: list, zipname_pth_map: dict):
     zipname_pth_map[os.path.basename(zipped_file)] = zipped_file
     yield 'Zipping done', zipped_file, zipname_pth_map
 
-def zip_selected_option_files(names: list, name_pth_map: dict, zipname_pth_map: dict):
+def zip_selected_option_files(names: list, name_pth_map: dict, zipname_pth_map: dict, options: list[str]):
+    if not options:
+        return f'No options selected!', None, gr.update()
     rng_name = uuid.uuid4().hex[:8]
     zipped_file = os.path.join(curr_dir, f'output_{rng_name}.zip')
     final_files = []
+    prefixes, suffixes = [], []
+    for option in options:
+        if option == 'MSA':
+            continue
+        m = file_extract_matching_map[option]
+        if m[0].startswith('.'):
+            suffixes.extend(m)
+        elif m[0].endswith('_'):
+            prefixes.extend(m)
+    regex_patterns = []
+    if prefixes:
+        regex_patterns.append(rf"^({'|'.join(prefixes)})")
+    if suffixes:
+        regex_patterns.append(rf"({'|'.join(suffixes).replace('.', r'\.')})$")
+    if regex_patterns:
+        file_pattern = re.compile('|'.join(regex_patterns))
+    else:
+        file_pattern = None
     for n in names:
         pred_dir = name_pth_map[n]
-        for root, _, files in os.walk(pred_dir):
-            for file in files:
-                final_files.append(os.path.join(root, file))
+        if file_pattern is not None:
+            for root, _, files in os.walk(pred_dir):
+                for file in files:
+                    if file_pattern.search(file):
+                        final_files.append(os.path.join(root, file))
+        if 'MSA' in options:
+            msa_dir = os.path.join(os.path.dirname(pred_dir), 'msa')
+            if not os.path.isdir(msa_dir):
+                msa_dir = os.path.join(os.path.dirname(os.path.dirname(pred_dir)), 'msa')
+            for file in os.listdir(msa_dir):
+                if file.endswith('.csv'):
+                    final_files.append(os.path.join(msa_dir, file))
     max_f_cnt_len = len(str(len(final_files)))
     yield f'{0:{max_f_cnt_len}}/{len(final_files)}', gr.update(), gr.update()
     c = 0
@@ -2691,6 +2727,9 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         with gr.Accordion('Directory List', open=True):
             output_map = _extract_pred_dirs()
             download_file_pth_map = gr.State(output_map)
+            download_ckbox_group = gr.CheckboxGroup(choices=['Structure', 'Confidence', 'Affinity', 'PAE', 'PDE', 'pLDDT', 'MSA'],
+                                                    value=['Structure', 'Confidence', 'Affinity', 'PAE', 'PDE', 'pLDDT'],
+                                                    label='Files to be downloaded', interactive=True)
             output_directory_options = gr.Dropdown(choices=list(output_map),
                                                    label='Output Directories',
                                                    multiselect=True, interactive=True)
@@ -2714,7 +2753,8 @@ with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
         download_selected_option_button.click(zip_selected_option_files,
                                               inputs=[output_directory_options,
                                                       download_file_pth_map,
-                                                      all_zipped_files_map],
+                                                      all_zipped_files_map,
+                                                      download_ckbox_group],
                                               outputs=[zipping_option_progress,
                                                        download_zip_option_files,
                                                        all_zipped_files_map])
