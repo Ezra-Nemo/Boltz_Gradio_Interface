@@ -1705,11 +1705,11 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         with gr.Row():
                             contact_1_dropdown = gr.Dropdown(label='Chain 1',
                                                             interactive=True)
-                            contact_1_text = gr.Text(label='Reside IDX/Atom Name')
+                            contact_1_text = gr.Text(label='Residue IDX/Atom Name')
                         with gr.Row():
                             contact_2_dropdown = gr.Dropdown(label='Chain 2',
                                                             interactive=True)
-                            contact_2_text = gr.Text(label='Reside IDX/Atom Name')
+                            contact_2_text = gr.Text(label='Residue IDX/Atom Name')
                         with gr.Row():
                             contact_max_distance = gr.Number(6, label='Max Distance (Å)',
                                                              interactive=True, minimum=0, min_width=20, scale=2)
@@ -2253,11 +2253,11 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         with gr.Row():
                             vhts_contact_1_dropdown = gr.Dropdown(label='Chain 1',
                                                                   interactive=True)
-                            vhts_contact_1_text = gr.Text(label='Reside')
+                            vhts_contact_1_text = gr.Text(label='Residue')
                         with gr.Row():
                             vhts_contact_2_dropdown = gr.Dropdown(label='Chain 2',
                                                                   interactive=True)
-                            vhts_contact_2_text = gr.Text(label='Reside')
+                            vhts_contact_2_text = gr.Text(label='Residue')
                         with gr.Row():
                             vhts_contact_max_distance = gr.Number(6, label='Max Distance (Å)',
                                                                 interactive=True, minimum=0, min_width=20, scale=2)
