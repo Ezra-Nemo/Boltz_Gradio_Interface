@@ -2048,7 +2048,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                          force_template_checkbox, template_threshold,
                                          template_dropdown, template_name_usage_dict, template_name_setting_dict],
                                  outputs=[template_name_usage_dict, template_name_setting_dict])
-        template_threshold.input(update_template_chain_ids_and_settings,
+        template_threshold.change(update_template_chain_ids_and_settings,
                                  inputs=[use_template_checkbox, target_chain_ids, template_chain_ids,
                                          force_template_checkbox, template_threshold,
                                          template_dropdown, template_name_usage_dict, template_name_setting_dict],
