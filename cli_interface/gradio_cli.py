@@ -130,7 +130,7 @@ sampling_steps_affinity = gr.Number(200, label='sampling_steps_affinity',
 diffusion_samples_affinity = gr.Number(5, label='diffusion_samples_affinity',
                                        info='The number of diffusion samples to use for affinity prediction.',
                                        interactive=True, minimum=1)
-no_trifast = gr.Checkbox(False if cuda_available else True, label='no_trifast',
+no_kernels = gr.Checkbox(False if cuda_available else True, label='no_kernels',
                          info='Whether to NOT use trifast kernels for triangular updates.')
 override = gr.Checkbox(False, label='override', info='Whether to override existing predictions if found.')
 use_potentials = gr.Checkbox(False, label='use_potentials',
@@ -142,7 +142,7 @@ boltz_method = gr.Dropdown(const_methods, label='method',
 all_boltz_parameters = [device_number, accelerator_type, recycling_steps, sampling_steps,
                         diffusion_samples, step_scale, num_workers, preprocessing_threads,
                         affinity_mw_correction, sampling_steps_affinity, diffusion_samples_affinity,
-                        use_potentials, boltz_method, no_trifast, override]
+                        use_potentials, boltz_method, no_kernels, override]
 
 def concurrent_download_model_weight():
     ...
@@ -367,7 +367,7 @@ def execute_single_boltz(file_name: str, yaml_str: str,
                          num_workers: int, preprocessing_threads: int,
                          affinity_mw_correction: bool,
                          sampling_steps_affinity: int, diffusion_samples_affinity: int,
-                         use_potentials: bool, boltz_method: str, no_trifast: bool, override: bool):
+                         use_potentials: bool, boltz_method: str, no_kernels: bool, override: bool):
     random_dir_name = f"{file_name}_{uuid.uuid4().hex[:8]}"
     inp_rng_dir = os.path.join(input_dir, random_dir_name)
     out_rng_dir = os.path.join(output_dir, random_dir_name)
@@ -381,8 +381,8 @@ def execute_single_boltz(file_name: str, yaml_str: str,
         final_strs.append('--use_potentials')
     if affinity_mw_correction:
         final_strs.append('--affinity_mw_correction')
-    if no_trifast:
-        final_strs.append('--no_trifast')
+    if no_kernels:
+        final_strs.append('--no_kernels')
     if override:
         final_strs.append('--override')
     cmd = ['boltz', 'predict', inp_yaml,
@@ -438,7 +438,7 @@ def execute_multi_boltz(all_files: list[str],
                         num_workers: int, preprocessing_threads: int,
                         affinity_mw_correction: bool,
                         sampling_steps_affinity: int, diffusion_samples_affinity: int,
-                        use_potentials: bool, boltz_method: str, no_trifast: bool, override: bool):
+                        use_potentials: bool, boltz_method: str, no_kernels: bool, override: bool):
     # even though all the files are passed here, only their directory will be used 
     # since Boltz inherently allow batch processing
     dirname = os.path.dirname(all_files[0])
@@ -450,8 +450,8 @@ def execute_multi_boltz(all_files: list[str],
         final_strs.append('--use_potentials')
     if affinity_mw_correction:
         final_strs.append('--affinity_mw_correction')
-    if no_trifast:
-        final_strs.append('--no_trifast')
+    if no_kernels:
+        final_strs.append('--no_kernels')
     if override:
         final_strs.append('--override')
     cmd = ['boltz', 'predict', dirname,
@@ -519,7 +519,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                        num_workers: int, preprocessing_threads: int,
                        affinity_mw_correction: bool,
                        sampling_steps_affinity: int, diffusion_samples_affinity: int,
-                       use_potentials: bool, boltz_method: str, no_trifast: bool, override: bool):
+                       use_potentials: bool, boltz_method: str, no_kernels: bool, override: bool):
     random_dir_name = f"{file_prefix}_vHTS_{uuid.uuid4().hex[:8]}"
     inp_rng_dir = os.path.join(input_dir, random_dir_name)
     out_rng_dir = os.path.join(output_dir, random_dir_name)
@@ -532,8 +532,8 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         final_strs.append('--use_potentials')
     if affinity_mw_correction:
         final_strs.append('--affinity_mw_correction')
-    if no_trifast:
-        final_strs.append('--no_trifast')
+    if no_kernels:
+        final_strs.append('--no_kernels')
     # Never override for vHTS
     # if override:
     #     final_strs.append('--override')
@@ -2856,7 +2856,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                 affinity_mw_correction.render()
                 sampling_steps_affinity.render()
                 diffusion_samples_affinity.render()
-                no_trifast.render()
+                no_kernels.render()
                 override.render()
                 use_potentials.render()
         download_model_weight.click(manual_download_boltz_weights, outputs=download_model_weight)
