@@ -1392,7 +1392,8 @@ def zip_selected_option_files(names: list, name_pth_map: dict, zipname_pth_map: 
     if prefixes:
         regex_patterns.append(rf"^({'|'.join(prefixes)})")
     if suffixes:
-        regex_patterns.append(rf"({'|'.join(suffixes).replace('.', r'\.')})$")
+        escaped_suffixes = [s.replace('.', r'\.') for s in suffixes]
+        regex_patterns.append(rf"({'|'.join(escaped_suffixes)})$")
     if regex_patterns:
         file_pattern = re.compile('|'.join(regex_patterns))
     else:
