@@ -1012,28 +1012,42 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
     
     length_split = [0]
     chain_entity_map = {}
-    last_res, last_c, i, last_mdl_num = None, None, 0, None
-    for line in mdl_strs.split('\n'):
-        if line.startswith(('ATOM', 'HETATM')):
-            if line.strip() == '#':
+    res_id_idx, entity_id_idx, chain_id_idx, mdl_num_idx = 0, 0, 0, 0
+    idx = -1
+    if mdl_strs is not None:
+        last_res, last_c, i, last_mdl_num = None, None, 0, None
+        for line in mdl_strs.split('\n'):
+            if line.startswith(('_atom_site.')):
+                idx += 1
+                if   line.endswith('.label_seq_id'):
+                    res_id_idx = idx
+                elif line.endswith('.label_entity_id'):
+                    entity_id_idx = idx
+                elif line.endswith('.label_asym_id'):
+                    chain_id_idx = idx
+                elif line.endswith('.pdbx_PDB_model_num'):
+                    mdl_num_idx = idx
+            elif line.startswith(('ATOM', 'HETATM')):
+                if line.strip() == '#':
+                    break
+                all_splitted = line.strip().split()
+                res_id, entity_id, c, mdl_num = all_splitted[res_id_idx], all_splitted[entity_id_idx], \
+                    all_splitted[chain_id_idx], all_splitted[mdl_num_idx]
+                chain_entity_map[c] = entity_id
+                if last_c is not None and last_c != c:
+                    length_split.append(int(last_res) if last_res != '.' else i)
+                    i = 0
+                if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    break
+                last_c = c
+                last_res = res_id
+                last_mdl_num = mdl_num
+                if res_id == '.':
+                    i += 1
+            elif line == '_atom_type.symbol':
+                if last_c is not None:
+                    length_split.append(int(last_res) if last_res != '.' else i)
                 break
-            all_splitted = line.strip().split()
-            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
-            chain_entity_map[c] = entity_id
-            if last_c is not None and last_c != c:
-                length_split.append(int(last_res) if last_res != '.' else i)
-                i = 0
-            if last_mdl_num is not None and mdl_num != last_mdl_num:
-                break
-            last_c = c
-            last_res = res_id
-            last_mdl_num = mdl_num
-            if res_id == '.':
-                i += 1
-        elif line == '_atom_type.symbol':
-            if last_c is not None:
-                length_split.append(int(last_res) if last_res != '.' else i)
-            break
     
     length_split = np.cumsum(length_split)
     pae_mat = np.load(conf_metrics['pae_pth'])['pae']
@@ -1273,28 +1287,42 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     
     length_split = [0]
     chain_entity_map = {}
-    last_res, last_c, i, last_mdl_num = None, None, 0, None
-    for line in mdl_strs.split('\n'):
-        if line.startswith(('ATOM', 'HETATM')):
-            if line.strip() == '#':
+    res_id_idx, entity_id_idx, chain_id_idx, mdl_num_idx = 0, 0, 0, 0
+    idx = -1
+    if mdl_strs is not None:
+        last_res, last_c, i, last_mdl_num = None, None, 0, None
+        for line in mdl_strs.split('\n'):
+            if line.startswith(('_atom_site.')):
+                idx += 1
+                if   line.endswith('.label_seq_id'):
+                    res_id_idx = idx
+                elif line.endswith('.label_entity_id'):
+                    entity_id_idx = idx
+                elif line.endswith('.label_asym_id'):
+                    chain_id_idx = idx
+                elif line.endswith('.pdbx_PDB_model_num'):
+                    mdl_num_idx = idx
+            elif line.startswith(('ATOM', 'HETATM')):
+                if line.strip() == '#':
+                    break
+                all_splitted = line.strip().split()
+                res_id, entity_id, c, mdl_num = all_splitted[res_id_idx], all_splitted[entity_id_idx], \
+                    all_splitted[chain_id_idx], all_splitted[mdl_num_idx]
+                chain_entity_map[c] = entity_id
+                if last_c is not None and last_c != c:
+                    length_split.append(int(last_res) if last_res != '.' else i)
+                    i = 0
+                if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    break
+                last_c = c
+                last_res = res_id
+                last_mdl_num = mdl_num
+                if res_id == '.':
+                    i += 1
+            elif line == '_atom_type.symbol':
+                if last_c is not None:
+                    length_split.append(int(last_res) if last_res != '.' else i)
                 break
-            all_splitted = line.strip().split()
-            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
-            chain_entity_map[c] = entity_id
-            if last_c is not None and last_c != c:
-                length_split.append(int(last_res) if last_res != '.' else i)
-                i = 0
-            if last_mdl_num is not None and mdl_num != last_mdl_num:
-                break
-            last_c = c
-            last_res = res_id
-            last_mdl_num = mdl_num
-            if res_id == '.':
-                i += 1
-        elif line == '_atom_type.symbol':
-            if last_c is not None:
-                length_split.append(int(last_res) if last_res != '.' else i)
-            break
     
     length_split = np.cumsum(length_split)
     pae_mat = np.load(conf_metrics['pae'])['pae']

@@ -1007,14 +1007,27 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
     # check split & chains
     length_split = [0]
     chain_entity_map = {}
+    res_id_idx, entity_id_idx, chain_id_idx, mdl_num_idx = 0, 0, 0, 0
+    idx = -1
     if mdl_strs is not None:
         last_res, last_c, i, last_mdl_num = None, None, 0, None
         for line in mdl_strs.split('\n'):
-            if line.startswith(('ATOM', 'HETATM')):
+            if line.startswith(('_atom_site.')):
+                idx += 1
+                if   line.endswith('.label_seq_id'):
+                    res_id_idx = idx
+                elif line.endswith('.label_entity_id'):
+                    entity_id_idx = idx
+                elif line.endswith('.label_asym_id'):
+                    chain_id_idx = idx
+                elif line.endswith('.pdbx_PDB_model_num'):
+                    mdl_num_idx = idx
+            elif line.startswith(('ATOM', 'HETATM')):
                 if line.strip() == '#':
                     break
                 all_splitted = line.strip().split()
-                res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
+                res_id, entity_id, c, mdl_num = all_splitted[res_id_idx], all_splitted[entity_id_idx], \
+                    all_splitted[chain_id_idx], all_splitted[mdl_num_idx]
                 chain_entity_map[c] = entity_id
                 if last_c is not None and last_c != c:
                     length_split.append(int(last_res) if last_res != '.' else i)
@@ -1288,14 +1301,27 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     # check split & chains
     length_split = [0]
     chain_entity_map = {}
+    res_id_idx, entity_id_idx, chain_id_idx, mdl_num_idx = 0, 0, 0, 0
+    idx = -1
     if mdl_strs is not None:
         last_res, last_c, i, last_mdl_num = None, None, 0, None
         for line in mdl_strs.split('\n'):
-            if line.startswith(('ATOM', 'HETATM')):
+            if line.startswith(('_atom_site.')):
+                idx += 1
+                if   line.endswith('.label_seq_id'):
+                    res_id_idx = idx
+                elif line.endswith('.label_entity_id'):
+                    entity_id_idx = idx
+                elif line.endswith('.label_asym_id'):
+                    chain_id_idx = idx
+                elif line.endswith('.pdbx_PDB_model_num'):
+                    mdl_num_idx = idx
+            elif line.startswith(('ATOM', 'HETATM')):
                 if line.strip() == '#':
                     break
                 all_splitted = line.strip().split()
-                res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
+                res_id, entity_id, c, mdl_num = all_splitted[res_id_idx], all_splitted[entity_id_idx], \
+                    all_splitted[chain_id_idx], all_splitted[mdl_num_idx]
                 chain_entity_map[c] = entity_id
                 if last_c is not None and last_c != c:
                     length_split.append(int(last_res) if last_res != '.' else i)
@@ -1686,14 +1712,22 @@ def remove_output_dirs(names: list, name_pth_map: dict):
         if is_vhts:
             print('This will be removed (vHTS): ', pth.parent.parent)
             shutil.rmtree(pth.parent.parent)
+            yield 'Files removed!'
+            time.sleep(1.)
         else:
             sub_dirs = [d for d in os.listdir(pth.parent) if not d.startswith('.')]
             if len(sub_dirs) == 1:
                 print('This will be removed (single): ', pth.parent.parent.parent)
                 shutil.rmtree(pth.parent.parent.parent)
+                yield 'Files removed!'
+                time.sleep(1.)
             else:
                 print('This will be removed (multiple): ', pth)
                 shutil.rmtree(pth)
+                yield 'Files removed!'
+                time.sleep(1.)
+        yield 'Remove Selected'
+        
 
 active_clients = set()
 def on_unload():
@@ -2933,7 +2967,9 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
             select_boltz_output_zip.click(choose_zips, outputs=move_boltz_output_progress)
             refresh_rm_button.click(update_output_dropdown, outputs=[rm_output_options,
                                                                      rm_output_file_pth_map])
-            rm_selected_button.click(remove_output_dirs, inputs=[rm_output_options, rm_output_file_pth_map])
+            rm_selected_button.click(remove_output_dirs,
+                                     inputs=[rm_output_options, rm_output_file_pth_map],
+                                     outputs=rm_selected_button)
     
     Interface.unload(on_unload)
     
