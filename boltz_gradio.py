@@ -1903,6 +1903,9 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         curr_template['force'] = chain_template_id_dict['force']
                         if chain_template_id_dict['threshold'] > -1:
                             curr_template['threshold'] = chain_template_id_dict['threshold']
+                        else:
+                            if curr_template['force']:
+                                return ('Template threshold must be specified if "Force" is set to true!')
                         if chain_template_id_dict['chain_id']:
                             curr_template['chain_id'] = chain_template_id_dict['chain_id']
                         if chain_template_id_dict['template_id']:
@@ -2391,6 +2394,9 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                             curr_template['force'] = chain_template_id_dict['force']
                             if chain_template_id_dict['threshold'] > -1:
                                 curr_template['threshold'] = chain_template_id_dict['threshold']
+                            else:
+                                if curr_template['force']:
+                                    return ('Template threshold must be specified if "Force" is set to true!')
                             if chain_template_id_dict['chain_id']:
                                 curr_template['chain_id'] = chain_template_id_dict['chain_id']
                             if chain_template_id_dict['template_id']:
