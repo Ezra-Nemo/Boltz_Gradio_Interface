@@ -423,13 +423,16 @@ def execute_single_boltz(file_name: str, yaml_str: str,
     full_output += 'Prediction Done!\nWriting combined model...\n'
     out_struct_dir = Path(os.path.join(out_rng_dir, f'boltz_results_{file_name}', 'predictions', file_name))
     all_mdls = []
-    for f in os.listdir(out_struct_dir):
-        if f.endswith('.cif'):
-            all_mdls.append(os.path.join(out_struct_dir, f))
-    all_mdls = sorted(all_mdls, key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))
-    combined_cif_pth = os.path.join(out_struct_dir, f'{file_name}_model_combined.cif')
-    combine_and_write_cif(all_mdls, combined_cif_pth)
-    full_output += 'Combined model written!'
+    if os.path.exists(out_struct_dir):
+        for f in os.listdir(out_struct_dir):
+            if f.endswith('.cif'):
+                all_mdls.append(os.path.join(out_struct_dir, f))
+        all_mdls = sorted(all_mdls, key=lambda x: int(x.rsplit('.', 1)[0].rsplit('_')[-1]))
+        combined_cif_pth = os.path.join(out_struct_dir, f'{file_name}_model_combined.cif')
+        combine_and_write_cif(all_mdls, combined_cif_pth)
+        full_output += 'Combined model written!'
+    else:
+        full_output += 'Prediction failed!'
     
     yield gr.update(value='Run Boltz', interactive=True), full_output
 
