@@ -67,7 +67,8 @@ footer { display: none !important; }
 .log textarea {font-size: 12px; font-family: Courier New, Courier, monospace; !important}
 .small-upload-style .wrap {font-size: 10px; !important}
 .small-upload-style .icon-wrap svg {display: none; !important}
-.small-header-table tr[slot="thead"] th .cell-wrap {font-size: 10px; !important}
+.small-header-table th {font-size: 10px !important; text-align: center !important;}
+.centered-checkbox {display: flex; align-items: center; padding: 0 10px;}
 """
 
 const_methods = ['md', 'x-ray diffraction', 'electron microscopy', 'solution nmr', 'solid-state nmr', 'neutron diffraction', 'electron crystallography', 'fiber diffraction', 'powder diffraction', 'infrared spectroscopy', 'fluorescence transfer', 'epr', 'theoretical model', 'solution scattering', 'other', 'afdb', 'boltz-1', 'future1', 'future2', 'future3', 'future4', 'future5']
@@ -944,6 +945,12 @@ def update_name_rank_dropdown(name: str, name_rank_f_map: dict):
     total_rank = len(name_rank_f_map[name])
     return gr.update(choices=[f'Rank {i}' for i in range(1, total_rank + 1)])
 
+def _return_length(all_arrays: list[np.array]):
+    for arr in all_arrays:
+        if arr is not None:
+            return arr.shape[0]
+    return None
+
 def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict, color: str):
     if not rank_name.strip():
         return [gr.update()] * 8
@@ -951,27 +958,38 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
     conf_metrics = name_rank_f_map[name][rank]
     if rank+1 > len(conf_metrics):
         return [gr.update()] * 8
-    with open(conf_metrics['cif_model']) as f:
-        mdl_strs = f.read()
-    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    
+    # check strucutre
+    if not os.path.exists(conf_metrics['cif_model']):
+        mdl_strs = None
+        cif_base64 = ''
+    else:
+        with open(conf_metrics['cif_model']) as f:
+            mdl_strs = f.read()
+        cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
     
     yield (get_general_molstar_html(cif_base64, rank, color), gr.update(''), gr.update(''),
            gr.update(''), gr.update(''), gr.update(''), gr.update(''), gr.update(''))
     
-    with open(conf_metrics['confidence']) as f:
-        conf_dict = json.load(f)
+    # check confidence
+    conf_f = conf_metrics['confidence']
     overall_conf, chain_conf, pair_chain_conf = [], [], []
-    for conf_id, value in conf_dict.items():
-        if isinstance(value, float):
-            overall_conf.append([conf_id, f'{value:.4f}'])
-        elif conf_id == 'chains_ptm':
-            for chain_n, ptm_value in value.items():
-                chain_conf.append([f'{int(chain_n)+1}', f'{ptm_value:.4f}'])
-        elif conf_id == 'pair_chains_iptm':
-            for i, all_ptm_value in enumerate(value.values()):
-                pair_chain_conf.append([])
-                for single_ptm_value in all_ptm_value.values():
-                    pair_chain_conf[i].append(f'{single_ptm_value:.4f}')
+    if os.path.exists(conf_f):
+        with open(conf_f) as f:
+            conf_dict = json.load(f)
+        for conf_id, value in conf_dict.items():
+            if isinstance(value, float):
+                overall_conf.append([conf_id, f'{value:.4f}'])
+            elif conf_id == 'chains_ptm':
+                for chain_n, ptm_value in value.items():
+                    chain_conf.append([f'{int(chain_n)+1}', f'{ptm_value:.4f}'])
+            elif conf_id == 'pair_chains_iptm':
+                for i, all_ptm_value in enumerate(value.values()):
+                    pair_chain_conf.append([])
+                    for single_ptm_value in all_ptm_value.values():
+                        pair_chain_conf[i].append(f'{single_ptm_value:.4f}')
+    
+    # check affinity
     aff_f = conf_metrics['affinity']
     if aff_f is not None:
         aff_update = []
@@ -979,93 +997,116 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
             aff_data = json.load(f)
         for aff_metric, aff_value in aff_data.items():
             aff_update.append([aff_metric, f'{aff_value:.4f}'])
-        # combined_score = max((-aff_data['affinity_pred_value']-2)/4, 0) * aff_data['affinity_probability_binary']
-        # aff_update.append(['Overall Score', f'{combined_score:.4f}'])
+            # combined_score = max((-aff_data['affinity_pred_value']-2)/4, 0) * aff_data['affinity_probability_binary']
+            # aff_update.append(['Overall Score', f'{combined_score:.4f}'])
         aff_update = gr.update(value=aff_update, visible=True)
     else:
         aff_update = gr.update(visible=False)
     
+    # check split & chains
     length_split = [0]
     chain_entity_map = {}
-    last_res, last_c, i, last_mdl_num = None, None, 0, None
-    for line in mdl_strs.split('\n'):
-        if line.startswith(('ATOM', 'HETATM')):
-            if line.strip() == '#':
+    if mdl_strs is not None:
+        last_res, last_c, i, last_mdl_num = None, None, 0, None
+        for line in mdl_strs.split('\n'):
+            if line.startswith(('ATOM', 'HETATM')):
+                if line.strip() == '#':
+                    break
+                all_splitted = line.strip().split()
+                res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
+                chain_entity_map[c] = entity_id
+                if last_c is not None and last_c != c:
+                    length_split.append(int(last_res) if last_res != '.' else i)
+                    i = 0
+                if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    break
+                last_c = c
+                last_res = res_id
+                last_mdl_num = mdl_num
+                if res_id == '.':
+                    i += 1
+            elif line == '_atom_type.symbol':
+                if last_c is not None:
+                    length_split.append(int(last_res) if last_res != '.' else i)
                 break
-            all_splitted = line.strip().split()
-            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
-            chain_entity_map[c] = entity_id
-            if last_c is not None and last_c != c:
-                length_split.append(int(last_res) if last_res != '.' else i)
-                i = 0
-            if last_mdl_num is not None and mdl_num != last_mdl_num:
-                break
-            last_c = c
-            last_res = res_id
-            last_mdl_num = mdl_num
-            if res_id == '.':
-                i += 1
-        elif line == '_atom_type.symbol':
-            if last_c is not None:
-                length_split.append(int(last_res) if last_res != '.' else i)
-            break
     
     length_split = np.cumsum(length_split)
-    pae_mat = np.load(conf_metrics['pae_pth'])['pae']
-    pde_mat = np.load(conf_metrics['pde_pth'])['pde']
-    total_length = pae_mat.shape[0]
-    plddt_array = np.load(conf_metrics['plddt_pth'])['plddt']
-    pae_fig = px.imshow(pae_mat, color_continuous_scale='Greens_r',
-                        range_color=[0.25, 31.75], labels={'color': 'PAE (Å)'})
-    for i in range(len(length_split)-2):
-        end = length_split[i+1]
-        pae_fig.add_shape(type='line', x0=0, y0=end-0.5,
-                          x1=total_length-0.5, y1=end-0.5,
-                          line=dict(color="Cornflowerblue"))
-        pae_fig.add_shape(type='line', x0=end-0.5, y0=0,
-                          x1=end-0.5, y1=total_length-0.5,
-                          line=dict(color="Cornflowerblue"))
-    pde_fig = px.imshow(pde_mat, color_continuous_scale='Greens_r',
-                        range_color=[0.25, 31.75], labels={'color': 'PDE (Å)'})
-    for i in range(len(length_split)-2):
-        end = length_split[i+1]
-        pde_fig.add_shape(type='line', x0=0, y0=end-0.5,
-                          x1=total_length-0.5, y1=end-0.5,
-                          line=dict(color="Cornflowerblue"))
-        pde_fig.add_shape(type='line', x0=end-0.5, y0=0,
-                          x1=end-0.5, y1=total_length-0.5,
-                          line=dict(color="Cornflowerblue"))
-    plddt_fig = go.Figure()
-    all_chains = list(chain_entity_map)
-    for i in range(len(length_split)-1):
-        curr_c = all_chains[i]
-        splitted_plddt = plddt_array[length_split[i]:length_split[i+1]]
-        x_vals = np.arange(length_split[i]+1, length_split[i+1]+1)
-        mode = 'lines' if splitted_plddt.shape[0] > 1 else 'markers'
-        plddt_fig.add_trace(go.Scatter(x=x_vals,
-                                       y=splitted_plddt,
-                                       mode=mode,
-                                       name=f'Chain {curr_c} (Entity {chain_entity_map[curr_c]})'))
-    pae_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-    pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-    plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
-                            xaxis=dict(title=dict(text='Residue')),
-                            yaxis=dict(title=dict(text='pLDDT')),
-                            template='simple_white')
-    yield (gr.update(), overall_conf, chain_conf,
+    
+    # check PAE / PDE & pLDDT
+    pae_pth = conf_metrics['pae_pth']
+    pde_pth = conf_metrics['pde_pth']
+    plddt_pth = conf_metrics['plddt_pth']
+    pae_mat, pde_mat, plddt_array, total_length = None, None, None, None
+    if os.path.exists(pae_pth):
+        pae_mat = np.load(pae_pth)['pae']
+    if os.path.exists(pde_pth):
+        pde_mat = np.load(pde_pth)['pde']
+    if os.path.exists(plddt_pth):
+        plddt_array = np.load(plddt_pth)['plddt']
+    total_length = _return_length([pae_mat, pde_mat, plddt_array])
+    if pae_mat is not None:
+        pae_fig = px.imshow(pae_mat, color_continuous_scale='Greens_r',
+                            range_color=[0.25, 31.75], labels={'color': 'PAE (Å)'})
+        for i in range(len(length_split)-2):
+            end = length_split[i+1]
+            pae_fig.add_shape(type='line', x0=0, y0=end-0.5,
+                              x1=total_length-0.5, y1=end-0.5,
+                              line=dict(color="Cornflowerblue"))
+            pae_fig.add_shape(type='line', x0=end-0.5, y0=0,
+                              x1=end-0.5, y1=total_length-0.5,
+                              line=dict(color="Cornflowerblue"))
+        pae_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    else:
+        pae_fig = go.Figure()
+    if pde_mat is not None:
+        pde_fig = px.imshow(pde_mat, color_continuous_scale='Greens_r',
+                            range_color=[0.25, 31.75], labels={'color': 'PDE (Å)'})
+        for i in range(len(length_split)-2):
+            end = length_split[i+1]
+            pde_fig.add_shape(type='line', x0=0, y0=end-0.5,
+                              x1=total_length-0.5, y1=end-0.5,
+                              line=dict(color="Cornflowerblue"))
+            pde_fig.add_shape(type='line', x0=end-0.5, y0=0,
+                              x1=end-0.5, y1=total_length-0.5,
+                              line=dict(color="Cornflowerblue"))
+        pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    else:
+        pde_fig = go.Figure()
+    if plddt_array is not None:
+        plddt_fig = go.Figure()
+        all_chains = list(chain_entity_map)
+        for i in range(len(length_split)-1):
+            curr_c = all_chains[i]
+            splitted_plddt = plddt_array[length_split[i]:length_split[i+1]]
+            x_vals = np.arange(length_split[i]+1, length_split[i+1]+1)
+            mode = 'lines' if splitted_plddt.shape[0] > 1 else 'markers'
+            plddt_fig.add_trace(go.Scatter(x=x_vals,
+                                        y=splitted_plddt,
+                                        mode=mode,
+                                        name=f'Chain {curr_c} (Entity {chain_entity_map[curr_c]})'))
+        plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
+                                xaxis=dict(title=dict(text='Residue')),
+                                yaxis=dict(title=dict(text='pLDDT'), range=[0,1]),
+                                template='simple_white')
+    else:
+        plddt_fig = go.Figure()
+    yield [gr.update(), overall_conf, chain_conf,
             gr.DataFrame(value=pair_chain_conf,
                          headers=[f'{i+1}' for i in range(len(chain_conf))],
                          show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-            aff_update, pae_fig, pde_fig, plddt_fig)
+            aff_update, pae_fig, pde_fig, plddt_fig]
 
 def update_general_molstar_only(name: str, rank_name: str, name_rank_f_map: dict, color: str):
     if not rank_name.strip():
         return [gr.update()] * 8
     rank = int(rank_name.split(' ')[-1]) - 1
     conf_metrics = name_rank_f_map[name][rank]
-    with open(conf_metrics['cif_model']) as f:
-        mdl_strs = f.read()
-    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    if os.path.exists(conf_metrics['cif_model']):
+        with open(conf_metrics['cif_model']) as f:
+            mdl_strs = f.read()
+        cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    else:
+        cif_base64 = ''
     
     yield get_general_molstar_html(cif_base64, rank, color)
 
@@ -1184,114 +1225,157 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     
     parent, name = row_value[-1], row_value[0]
     conf_metrics = name_fpth_map[parent][name]
-    with open(conf_metrics['struct']) as f:
-        mdl_strs = f.read()
-    cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
-    yield [get_vhts_molstar_html(cif_base64, 0, 'plddt-confidence')] + [gr.update()] * 8 + [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
     
-    with open(conf_metrics['conf']) as f:
-        conf_dict = json.load(f)
+    # check strucutre
+    if not os.path.exists(conf_metrics['struct']):
+        mdl_strs = None
+        cif_base64 = ''
+    else:
+        with open(conf_metrics['struct']) as f:
+            mdl_strs = f.read()
+        cif_base64 = base64.b64encode(mdl_strs.encode()).decode('utf-8')
+    
+    yield [get_vhts_molstar_html(cif_base64, 0)] + [gr.update()] * 8 + \
+        [f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
+    
+    # check confidence
+    conf_f = conf_metrics['conf']
     overall_conf, chain_conf, pair_chain_conf = [], [], []
-    for conf_id, value in conf_dict.items():
-        if isinstance(value, float):
-            overall_conf.append([conf_id, f'{value:.4f}'])
-        elif conf_id == 'chains_ptm':
-            for chain_n, ptm_value in value.items():
-                chain_conf.append([f'{int(chain_n)+1}', f'{ptm_value:.4f}'])
-        elif conf_id == 'pair_chains_iptm':
-            for i, all_ptm_value in enumerate(value.values()):
-                pair_chain_conf.append([])
-                for single_ptm_value in all_ptm_value.values():
-                    pair_chain_conf[i].append(f'{single_ptm_value:.4f}')
-    aff_f = conf_metrics['aff']
-    aff_update = []
-    with open(aff_f) as f:
-        aff_data = json.load(f)
-    for aff_metric, aff_value in aff_data.items():
-        aff_update.append([aff_metric, f'{aff_value:.4f}'])
-    aff_update = gr.update(value=aff_update, visible=True)
+    if os.path.exists(conf_f):
+        with open(conf_f) as f:
+            conf_dict = json.load(f)
+        for conf_id, value in conf_dict.items():
+            if isinstance(value, float):
+                overall_conf.append([conf_id, f'{value:.4f}'])
+            elif conf_id == 'chains_ptm':
+                for chain_n, ptm_value in value.items():
+                    chain_conf.append([f'{int(chain_n)+1}', f'{ptm_value:.4f}'])
+            elif conf_id == 'pair_chains_iptm':
+                for i, all_ptm_value in enumerate(value.values()):
+                    pair_chain_conf.append([])
+                    for single_ptm_value in all_ptm_value.values():
+                        pair_chain_conf[i].append(f'{single_ptm_value:.4f}')
     
+    # check affinity
+    aff_f = conf_metrics['aff']
+    if aff_f is not None:
+        aff_update = []
+        with open(aff_f) as f:
+            aff_data = json.load(f)
+        for aff_metric, aff_value in aff_data.items():
+            aff_update.append([aff_metric, f'{aff_value:.4f}'])
+            # combined_score = max((-aff_data['affinity_pred_value']-2)/4, 0) * aff_data['affinity_probability_binary']
+            # aff_update.append(['Overall Score', f'{combined_score:.4f}'])
+        aff_update = gr.update(value=aff_update, visible=True)
+    else:
+        aff_update = gr.update(visible=False)
+    
+    # check pose buster result
     poseb_f = conf_metrics['pose']
     if poseb_f is not None:
         pose_df = pd.read_csv(poseb_f)
+        pose_update = gr.update(value=pose_df, visible=True)
     else:
-        pose_df = None
+        pose_update = gr.update(visible=False)
     
+    # yield [gr.update(), overall_conf, chain_conf,
+    #        gr.DataFrame(value=pair_chain_conf,
+    #                     headers=[f'{i+1}' for i in range(len(chain_conf))],
+    #                     show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
+    #        aff_update, pose_update] + [gr.update()] * 4
+    
+    # check split & chains
+    length_split = [0]
+    chain_entity_map = {}
+    if mdl_strs is not None:
+        last_res, last_c, i, last_mdl_num = None, None, 0, None
+        for line in mdl_strs.split('\n'):
+            if line.startswith(('ATOM', 'HETATM')):
+                if line.strip() == '#':
+                    break
+                all_splitted = line.strip().split()
+                res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
+                chain_entity_map[c] = entity_id
+                if last_c is not None and last_c != c:
+                    length_split.append(int(last_res) if last_res != '.' else i)
+                    i = 0
+                if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    break
+                last_c = c
+                last_res = res_id
+                last_mdl_num = mdl_num
+                if res_id == '.':
+                    i += 1
+            elif line == '_atom_type.symbol':
+                if last_c is not None:
+                    length_split.append(int(last_res) if last_res != '.' else i)
+                break
+    
+    length_split = np.cumsum(length_split)
+    
+    # check PAE / PDE & pLDDT
+    pae_pth = conf_metrics['pae']
+    pde_pth = conf_metrics['pde']
+    plddt_pth = conf_metrics['plddt']
+    pae_mat, pde_mat, plddt_array, total_length = None, None, None, None
+    if os.path.exists(pae_pth):
+        pae_mat = np.load(pae_pth)['pae']
+    if os.path.exists(pde_pth):
+        pde_mat = np.load(pde_pth)['pde']
+    if os.path.exists(plddt_pth):
+        plddt_array = np.load(plddt_pth)['plddt']
+    total_length = _return_length([pae_mat, pde_mat, plddt_array])
+    if pae_mat is not None:
+        pae_fig = px.imshow(pae_mat, color_continuous_scale='Greens_r',
+                            range_color=[0.25, 31.75], labels={'color': 'PAE (Å)'})
+        for i in range(len(length_split)-2):
+            end = length_split[i+1]
+            pae_fig.add_shape(type='line', x0=0, y0=end-0.5,
+                              x1=total_length-0.5, y1=end-0.5,
+                              line=dict(color="Cornflowerblue"))
+            pae_fig.add_shape(type='line', x0=end-0.5, y0=0,
+                              x1=end-0.5, y1=total_length-0.5,
+                              line=dict(color="Cornflowerblue"))
+        pae_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    else:
+        pae_fig = go.Figure()
+    if pde_mat is not None:
+        pde_fig = px.imshow(pde_mat, color_continuous_scale='Greens_r',
+                            range_color=[0.25, 31.75], labels={'color': 'PDE (Å)'})
+        for i in range(len(length_split)-2):
+            end = length_split[i+1]
+            pde_fig.add_shape(type='line', x0=0, y0=end-0.5,
+                              x1=total_length-0.5, y1=end-0.5,
+                              line=dict(color="Cornflowerblue"))
+            pde_fig.add_shape(type='line', x0=end-0.5, y0=0,
+                              x1=end-0.5, y1=total_length-0.5,
+                              line=dict(color="Cornflowerblue"))
+        pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
+    else:
+        pde_fig = go.Figure()
+    if plddt_array is not None:
+        plddt_fig = go.Figure()
+        all_chains = list(chain_entity_map)
+        for i in range(len(length_split)-1):
+            curr_c = all_chains[i]
+            splitted_plddt = plddt_array[length_split[i]:length_split[i+1]]
+            x_vals = np.arange(length_split[i]+1, length_split[i+1]+1)
+            mode = 'lines' if splitted_plddt.shape[0] > 1 else 'markers'
+            plddt_fig.add_trace(go.Scatter(x=x_vals,
+                                        y=splitted_plddt,
+                                        mode=mode,
+                                        name=f'Chain {curr_c} (Entity {chain_entity_map[curr_c]})'))
+        plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
+                                xaxis=dict(title=dict(text='Residue')),
+                                yaxis=dict(title=dict(text='pLDDT'), range=[0, 1]),
+                                template='simple_white')
+    else:
+        plddt_fig = go.Figure()
     yield [gr.update(), overall_conf, chain_conf,
            gr.DataFrame(value=pair_chain_conf,
                         headers=[f'{i+1}' for i in range(len(chain_conf))],
                         show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-           aff_update, gr.DataFrame(value=pose_df)] + [gr.update()] * 4
-    
-    length_split = [0]
-    chain_entity_map = {}
-    last_res, last_c, i, last_mdl_num = None, None, 0, None
-    for line in mdl_strs.split('\n'):
-        if line.startswith(('ATOM', 'HETATM')):
-            if line.strip() == '#':
-                break
-            all_splitted = line.strip().split()
-            res_id, entity_id, c, mdl_num = all_splitted[8], all_splitted[7], all_splitted[17], all_splitted[18]
-            chain_entity_map[c] = entity_id
-            if last_c is not None and last_c != c:
-                length_split.append(int(last_res) if last_res != '.' else i)
-                i = 0
-            if last_mdl_num is not None and mdl_num != last_mdl_num:
-                break
-            last_c = c
-            last_res = res_id
-            last_mdl_num = mdl_num
-            if res_id == '.':
-                i += 1
-        elif line == '_atom_type.symbol':
-            if last_c is not None:
-                length_split.append(int(last_res) if last_res != '.' else i)
-            break
-    
-    length_split = np.cumsum(length_split)
-    pae_mat = np.load(conf_metrics['pae'])['pae']
-    pde_mat = np.load(conf_metrics['pde'])['pde']
-    total_length = pae_mat.shape[0]
-    plddt_array = np.load(conf_metrics['plddt'])['plddt']
-    pae_fig = px.imshow(pae_mat, color_continuous_scale='Greens_r',
-                        range_color=[0.25, 31.75], labels={'color': 'PAE (Å)'})
-    for i in range(len(length_split)-2):
-        end = length_split[i+1]
-        pae_fig.add_shape(type='line', x0=0, y0=end-0.5,
-                          x1=total_length-0.5, y1=end-0.5,
-                          line=dict(color="Cornflowerblue"))
-        pae_fig.add_shape(type='line', x0=end-0.5, y0=0,
-                          x1=end-0.5, y1=total_length-0.5,
-                          line=dict(color="Cornflowerblue"))
-    pde_fig = px.imshow(pde_mat, color_continuous_scale='Greens_r',
-                        range_color=[0.25, 31.75], labels={'color': 'PDE (Å)'})
-    for i in range(len(length_split)-2):
-        end = length_split[i+1]
-        pde_fig.add_shape(type='line', x0=0, y0=end-0.5,
-                          x1=total_length-0.5, y1=end-0.5,
-                          line=dict(color="Cornflowerblue"))
-        pde_fig.add_shape(type='line', x0=end-0.5, y0=0,
-                          x1=end-0.5, y1=total_length-0.5,
-                          line=dict(color="Cornflowerblue"))
-    plddt_fig = go.Figure()
-    all_chains = list(chain_entity_map)
-    for i in range(len(length_split)-1):
-        curr_c = all_chains[i]
-        splitted_plddt = plddt_array[length_split[i]:length_split[i+1]]
-        x_vals = np.arange(length_split[i]+1, length_split[i+1]+1)
-        mode = 'lines' if splitted_plddt.shape[0] > 1 else 'markers'
-        plddt_fig.add_trace(go.Scatter(x=x_vals,
-                                       y=splitted_plddt,
-                                       mode=mode,
-                                       name=f'Chain {curr_c} (Entity {chain_entity_map[curr_c]})'))
-    pae_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-    pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-    plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
-                            xaxis=dict(title=dict(text='Residue')),
-                            yaxis=dict(title=dict(text='pLDDT')),
-                            template='simple_white')
-    yield [gr.update()] * 6 + [pae_fig, pde_fig, plddt_fig, 
-                               f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
+           aff_update, pose_update, pae_fig, pde_fig, plddt_fig, gr.update()]
 
 def download_vhts_dataframe(inp_df: pd.DataFrame, format: str):
     inp_df = pd.DataFrame(inp_df)
@@ -1617,7 +1701,7 @@ def on_unload():
         os.kill(os.getpid(), signal.SIGINT)
 
 ### Boltz Interface ###
-with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
+with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
     gr.Markdown('<span style="font-size:25px; font-weight:bold;">Boltz Interface</span>')
     with gr.Tab('🧬 Single Complex'):
         gr.Markdown('<span style="font-size:20px; font-weight:bold;">Basic Settings</span>')

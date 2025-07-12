@@ -63,7 +63,7 @@ property_functions = {'Molecular Weight'  : Descriptors.MolWt,
                       'Natural Product-likeness Score (NP)': partial(npscorer.scoreMol, fscore=fscore),
                       'Synthetic Accessibility Score (SA)': sascorer.calculateScore}
 
-file_extract_matching_map = {'Structure' : ['.cif', '.sdf'],
+file_extract_matching_map = {'Structure' : ['.cif', '.sdf', '_bust.csv'],
                              'Confidence': ['confidence_'],
                              'Affinity'  : ['affinity_'],
                              'PAE'       : ['pae_'],
@@ -77,7 +77,7 @@ footer { display: none !important; }
 .log textarea {font-size: 12px; font-family: Courier New, Courier, monospace; !important}
 .small-upload-style .wrap {font-size: 10px; !important}
 .small-upload-style .icon-wrap svg {display: none; !important}
-.small-header-table tr[slot="thead"] th .cell-wrap {font-size: 10px; !important}
+.small-header-table th {font-size: 10px !important; text-align: center !important;}
 .centered-checkbox {display: flex; align-items: center; padding: 0 10px;}
 """
 
@@ -1035,8 +1035,8 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
     length_split = np.cumsum(length_split)
     pae_mat = np.load(conf_metrics['pae_pth'])['pae']
     pde_mat = np.load(conf_metrics['pde_pth'])['pde']
-    total_length = pae_mat.shape[0]
     plddt_array = np.load(conf_metrics['plddt_pth'])['plddt']
+    total_length = pae_mat.shape[0]
     pae_fig = px.imshow(pae_mat, color_continuous_scale='Greens_r',
                         range_color=[0.25, 31.75], labels={'color': 'PAE (Å)'})
     for i in range(len(length_split)-2):
@@ -1072,13 +1072,13 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
     pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
     plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
                             xaxis=dict(title=dict(text='Residue')),
-                            yaxis=dict(title=dict(text='pLDDT')),
+                            yaxis=dict(title=dict(text='pLDDT'), range=[0, 1]),
                             template='simple_white')
-    yield (gr.update(), overall_conf, chain_conf,
+    yield [gr.update(), overall_conf, chain_conf,
             gr.DataFrame(value=pair_chain_conf,
                          headers=[f'{i+1}' for i in range(len(chain_conf))],
                          show_row_numbers=True, column_widths=['30px'] * len(chain_conf)),
-            aff_update, pae_fig, pde_fig, plddt_fig)
+            aff_update, pae_fig, pde_fig, plddt_fig]
 
 def update_general_molstar_only(name: str, rank_name: str, name_rank_f_map: dict, color: str):
     if not rank_name.strip():
@@ -1333,7 +1333,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
     pde_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
     plddt_fig.update_layout(margin=dict(l=0, r=0, t=0, b=0),
                             xaxis=dict(title=dict(text='Residue')),
-                            yaxis=dict(title=dict(text='pLDDT')),
+                            yaxis=dict(title=dict(text='pLDDT'), range=[0, 1]),
                             template='simple_white')
     yield [gr.update()] * 6 + [pae_fig, pde_fig, plddt_fig, 
                                f'<span style="font-size:15px; font-weight:bold;">Visualization of {name}</span>']
@@ -1630,7 +1630,7 @@ def draw_smiles_3d(smiles_str: str):
         yield get_mol_molstar_html(mol_str), gr.update()
 
 ### Boltz Interface ###
-with gr.Blocks(css=css, theme=gr.themes.Default()) as Interface:
+with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
     gr.Markdown('<span style="font-size:25px; font-weight:bold;">Boltz Interface</span>')
     with gr.Tab('🧬 Single Complex'):
         gr.Markdown('<span style="font-size:20px; font-weight:bold;">Basic Settings</span>')
