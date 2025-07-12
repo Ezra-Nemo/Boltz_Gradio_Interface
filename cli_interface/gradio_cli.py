@@ -1,4 +1,4 @@
-import os, io, re, uuid, json, time, torch, base64, webview, signal
+import os, io, re, uuid, json, time, base64, webview, signal
 import shutil, zipfile, requests, tempfile, subprocess, threading, contextlib
 import numpy as np
 import gradio as gr
@@ -73,9 +73,7 @@ footer { display: none !important; }
 
 const_methods = ['md', 'x-ray diffraction', 'electron microscopy', 'solution nmr', 'solid-state nmr', 'neutron diffraction', 'electron crystallography', 'fiber diffraction', 'powder diffraction', 'infrared spectroscopy', 'fluorescence transfer', 'epr', 'theoretical model', 'solution scattering', 'other', 'afdb', 'boltz-1', 'future1', 'future2', 'future3', 'future4', 'future5']
 device_num = 1
-cuda_available = torch.cuda.is_available()
-if cuda_available:
-    device_num = torch.cuda.device_count()
+cuda_available = False
 
 curr_dir = os.path.dirname(__file__)
 output_dir = os.path.join(curr_dir, 'boltz_output')
