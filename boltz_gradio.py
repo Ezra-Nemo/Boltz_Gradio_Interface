@@ -143,7 +143,7 @@ override = gr.Checkbox(False, label='override', info='Whether to override existi
 use_potentials = gr.Checkbox(False, label='use_potentials',
                              info='Whether to run the original Boltz-2 model using inference time potentials.')
 boltz_method = gr.Dropdown(list(const.method_types_ids.keys()), label='method',
-                           value='x-ray diffraction',
+                           value='afdb',
                            info='The method to use for prediction.')
 
 all_boltz_parameters = [device_number, accelerator_type, recycling_steps, sampling_steps,
