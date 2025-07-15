@@ -1812,12 +1812,13 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                     with gr.Column(key=f'Entity_{i}_sub3', scale=1):
                         with gr.Group(key=f'Entity_{i}_sub3_group1'):
                             with gr.Row(key=f'Entity_{i}_sub3_group1_row1'):
-                                cyclic_ckbox = gr.Checkbox(False, label='Cyclic', min_width=50)
-                                msa_ckbox = gr.Checkbox(True, label='Use MSA', min_width=50, interactive=True)
+                                cyclic_ckbox = gr.Checkbox(False, label='Cyclic', min_width=50, key=f'Cyclic_{i}')
+                                msa_ckbox = gr.Checkbox(True, label='Use MSA', min_width=50, interactive=True,
+                                                        key=f'use_MSA_{i}')
                             modification_text = gr.Text(label='Modifications (Residue:CCD)',
-                                                        placeholder='2:ALY,15:MSE')
+                                                        placeholder='2:ALY,15:MSE', key=f'Mod_{i}')
                             msa_file = gr.File(label='MSA File', file_types=['.a3m', '.csv'], height=92,
-                                               elem_classes='small-upload-style')
+                                               elem_classes='small-upload-style', key=f'msa_file_{i}')
                         
                     component_refs.extend([entity_menu, chain_name_text, sequence_text,
                                            cyclic_ckbox, modification_text, msa_file, msa_ckbox])
@@ -2324,13 +2325,13 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                                       label='Entity',
                                                       value=entity_types[0],
                                                       interactive=True,
-                                                      key=f'ET_{i}', scale=1)
+                                                      key=f'vhts_ET_{i}', scale=1)
                             chain_name_text = gr.Text('',
                                                       label='Chains',
                                                       info='Press Enter to update Binder',
                                                       placeholder='A,B,C',
                                                       interactive=True,
-                                                      key=f'Chain_{i}',
+                                                      key=f'vhts_Chain_{i}',
                                                       scale=1)
                         with gr.Column(key=f'Entity_{i}_sub2', scale=4):
                             with gr.Group(key=f'Entity_{i}_sub2_Group'):
@@ -2338,19 +2339,19 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                                             placeholder='Input',
                                                             interactive=True,
                                                             lines=3,
-                                                            key=f'SQ_{i}',
+                                                            key=f'vhts_SQ_{i}',
                                                             elem_classes='sequence')
                                 highlight_text = gr.HighlightedText([('Input required!', 'X')],
                                                                     label='Validation',
                                                                     color_map={'✓': 'green',
                                                                                'X': 'red'},
-                                                                    key=f'HL_{i}',
+                                                                    key=f'vhts_HL_{i}',
                                                                     elem_classes='validation',
                                                                     show_legend=True)
                         with gr.Column(key=f'Entity_{i}_sub3', scale=1):
-                            cyclic_ckbox = gr.Checkbox(False, label='Cyclic')
+                            cyclic_ckbox = gr.Checkbox(False, label='Cyclic', key=f'vhts_Cyclic_{i}')
                             modification_text = gr.Text(label='Modifications (Residue:CCD)',
-                                                        placeholder='2:ALY,15:MSE')
+                                                        placeholder='2:ALY,15:MSE', key=f'vhts_Mod_{i}')
                         component_refs.extend([entity_menu, chain_name_text, sequence_text,
                                                cyclic_ckbox, modification_text])
                         entity_menu.change(change_sequence_label,
