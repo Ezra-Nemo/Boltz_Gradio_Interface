@@ -1949,7 +1949,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                 msa_rng_name = uuid.uuid4().hex[:8]
                 
                 for i in range(0, len(all_components), component_cnt):
-                    entity, chain, seq, cyclic, mod, msa_pth, use_msa = all_components[i:i+6]
+                    entity, chain, seq, cyclic, mod, msa_pth, use_msa = all_components[i:i+component_cnt]
                     seq = seq.strip()
                     
                     # set entity type
