@@ -1776,6 +1776,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
         
         @gr.render(inputs=mod_entity_number)
         def append_new_entity(counts: int):
+            component_cnt = 7
             component_refs = []
             for i in range(counts):
                 gr.Markdown(f'<span style="font-size:15px; font-weight:bold;">Entity {i+1}</span>', key=f'MK_{i}')
@@ -1810,14 +1811,16 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                                                 show_legend=True)
                     with gr.Column(key=f'Entity_{i}_sub3', scale=1):
                         with gr.Group(key=f'Entity_{i}_sub3_group1'):
-                            cyclic_ckbox = gr.Checkbox(False, label='Cyclic')
+                            with gr.Row(key=f'Entity_{i}_sub3_group1_row1'):
+                                cyclic_ckbox = gr.Checkbox(False, label='Cyclic', min_width=50)
+                                msa_ckbox = gr.Checkbox(True, label='Use MSA', min_width=50, interactive=True)
                             modification_text = gr.Text(label='Modifications (Residue:CCD)',
                                                         placeholder='2:ALY,15:MSE')
                             msa_file = gr.File(label='MSA File', file_types=['.a3m', '.csv'], height=92,
                                                elem_classes='small-upload-style')
                         
                     component_refs.extend([entity_menu, chain_name_text, sequence_text,
-                                           cyclic_ckbox, modification_text, msa_file])
+                                           cyclic_ckbox, modification_text, msa_file, msa_ckbox])
                     entity_menu.change(change_sequence_label,
                                        inputs=[entity_menu, sequence_text, cyclic_ckbox],
                                        outputs=[sequence_text, highlight_text, cyclic_ckbox])
@@ -1839,8 +1842,8 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                 
                 gr.HTML("<hr>")
             
-            chain_components = [comp for i, comp in enumerate(component_refs) if i % 6 <= 1]
-            entity_components = [comp for i, comp in enumerate(component_refs) if i % 6 == 0]
+            chain_components = [comp for i, comp in enumerate(component_refs) if i % component_cnt <= 1]
+            entity_components = [comp for i, comp in enumerate(component_refs) if i % component_cnt == 0]
             for i in range(0, len(chain_components), 2):
                 chain_input = chain_components[i+1]
                 entity_menu = entity_components[i//2]
@@ -1945,8 +1948,8 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                 existing_chains = []
                 msa_rng_name = uuid.uuid4().hex[:8]
                 
-                for i in range(0, len(all_components), 6):
-                    entity, chain, seq, cyclic, mod, msa_pth = all_components[i:i+6]
+                for i in range(0, len(all_components), component_cnt):
+                    entity, chain, seq, cyclic, mod, msa_pth, use_msa = all_components[i:i+6]
                     seq = seq.strip()
                     
                     # set entity type
@@ -2011,11 +2014,14 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         curr_dict = {entity_type: {'id'    : id,
                                                    seq_key : seq.upper(),
                                                    'cyclic': cyclic}}
-                    if msa_pth and entity_type == 'protein':
-                        target_msa = os.path.join(msa_dir, msa_rng_name, os.path.basename(msa_pth))
-                        os.makedirs(os.path.dirname(target_msa), exist_ok=True)
-                        shutil.copy(msa_pth, target_msa)
-                        curr_dict[entity_type]['msa'] = target_msa
+                    if entity_type == 'protein':
+                        if msa_pth and use_msa:
+                            target_msa = os.path.join(msa_dir, msa_rng_name, os.path.basename(msa_pth))
+                            os.makedirs(os.path.dirname(target_msa), exist_ok=True)
+                            shutil.copy(msa_pth, target_msa)
+                            curr_dict[entity_type]['msa'] = target_msa
+                        elif not use_msa:
+                            curr_dict[entity_type]['msa'] = 'empty'
                     if modifications is not None:
                         curr_dict[entity_type]['modifications'] = modifications
                     
