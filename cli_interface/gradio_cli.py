@@ -26,6 +26,8 @@ from Bio.PDB.mmcifio import MMCIFIO
 
 from posebusters import PoseBusters
 
+from tkinter import Tk, filedialog
+
 # TODO: Convert AF3/Chai-1/Protenix JSON to Boltz YAML
 
 RDLogger.DisableLog('rdApp.*')
@@ -1610,7 +1612,7 @@ def get_mol_molstar_html(mol_str: str):
                         }});
                         try {{
                             await viewer.loadStructureFromData({mol_js_string}, "mol", false);
-                            viewer.plugin.managers.interactivity.setProps({{ granularity: "element" }});
+                            await viewer.plugin.managers.interactivity.setProps({{ granularity: "element" }});
                         }} catch (err) {{
                             console.error("Mol* load error:", err);
                         }}
@@ -3036,8 +3038,8 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
 def main():
     import argparse
     
-    def run_gradio():
-        Interface.launch(server_name="0.0.0.0", server_port=7860)
+    def run_gradio(in_browser=False):
+        Interface.launch(server_name="0.0.0.0", server_port=7860, inbrowser=in_browser)
     
     parser = argparse.ArgumentParser(description="Launch Boltz Interface")
     parser.add_argument("--local_browser", action="store_true", help="Run the GUI in user's browser")
@@ -3045,11 +3047,15 @@ def main():
     args = parser.parse_args()
     
     if not args.local_browser:
-        threading.Thread(target=run_gradio, daemon=True).start()
-        webview.create_window('Local Boltz Interface', "http://0.0.0.0:7860", maximized=True)
+        # threading.Thread(target=run_gradio, daemon=True).start()
+        app, local_url, _ = Interface.launch(server_name="0.0.0.0", server_port=7860, prevent_thread_lock=True)
+        webview.create_window('Local Boltz Interface', local_url, maximized=True)
         webview.start()
     else:
-        Interface.launch(server_name="0.0.0.0", server_port=7860, inbrowser=True)
+        threading.Thread(target=run_gradio, kwargs={'in_browser': True}, daemon=True).start()
+        # Interface.launch(server_name="0.0.0.0", server_port=7860, inbrowser=True, prevent_thread_lock=True)
+        webview.create_window('', hidden=True)
+        webview.start()
 
 if __name__ == '__main__':
     main()

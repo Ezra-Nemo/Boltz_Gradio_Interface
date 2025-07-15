@@ -1,4 +1,4 @@
 gradio==5.35.0
 plotly
-git+https://github.com/jwohlwend/boltz.git@main#egg=boltz
+git+https://github.com/jwohlwend/boltz.git@main#egg=boltz[cuda]
 posebusters
