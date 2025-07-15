@@ -1963,36 +1963,36 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                     if len(chains) == 1:
                         id = chain.strip()
                         if id in existing_chains:
-                            return f'Chain {id} of Entity {i//6+1} already existed!'
+                            return f'Chain {id} of Entity {i//component_cnt+1} already existed!'
                         existing_chains.append(id)
                     else:
                         id = [c.strip() for c in chains]
                         for _i in id:
                             if id.count(_i) > 1:
-                                return f'Duplicate chain found within Entity {i//6+1}!'
+                                return f'Duplicate chain found within Entity {i//component_cnt+1}!'
                             if _i in existing_chains:
-                                return f'Chain {id} of Entity {i//6+1} already existed!'
+                                return f'Chain {id} of Entity {i//component_cnt+1} already existed!'
                         existing_chains.extend(id)
                     
                     # set key of sequence ('sequence', 'ccd' or 'smiles')
                     if not seq:
-                        return f'Entity {i//5+1} is empty!'
+                        return f'Entity {i//component_cnt+1} is empty!'
                     if entity == 'CCD':
                         seq_key = 'ccd'
                         seq = seq.upper()
                         if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})|[A-Z]{2}', seq):
-                            return f'Entity {i//5+1} is not a valid CCD ID!'
+                            return f'Entity {i//component_cnt+1} is not a valid CCD ID!'
                     elif entity == 'Ligand':
                         seq_key = 'smiles'
                         if Chem.MolFromSmiles(seq) is None:
-                            return f'Entity {i//5+1} is not a valid SMILES!'
+                            return f'Entity {i//component_cnt+1} is not a valid SMILES!'
                     else:
                         seq = seq.upper()
                         seq_key = 'sequence'
                         valid_strs = allow_char_dict[entity]
                         for char in seq:
                             if char not in valid_strs:
-                                return f'Entity {i//5+1} is not a valid {entity}!'
+                                return f'Entity {i//component_cnt+1} is not a valid {entity}!'
                     
                     # set modification
                     if mod:
@@ -2000,7 +2000,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         all_mods = mod.split(',')
                         for pos_ccd in all_mods:
                             if ':' not in pos_ccd:
-                                return (f'Invalid modification for Entity {i//6+1}, please use ":" to '
+                                return (f'Invalid modification for Entity {i//component_cnt+1}, please use ":" to '
                                         f'separate residue and CCD!\n')
                             pos, ccd = pos_ccd.split(':')
                             modifications.append({'position': int(pos), 'ccd': ccd})
