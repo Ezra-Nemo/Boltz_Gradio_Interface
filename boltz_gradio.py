@@ -1077,6 +1077,7 @@ def update_result_visualization(name: str, rank_name: str, name_rank_f_map: dict
                     length_split.append(int(last_res) if last_res != '.' else i)
                     i = 0
                 if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    length_split.append(int(last_res) if last_res != '.' else i)
                     break
                 last_c = c
                 last_res = res_id
@@ -1352,6 +1353,7 @@ def update_vhts_result_visualization(name_fpth_map: dict, evt: gr.SelectData):
                     length_split.append(int(last_res) if last_res != '.' else i)
                     i = 0
                 if last_mdl_num is not None and mdl_num != last_mdl_num:
+                    length_split.append(int(last_res) if last_res != '.' else i)
                     break
                 last_c = c
                 last_res = res_id
