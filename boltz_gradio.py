@@ -22,9 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 
 from functools import partial
 
-from Bio.PDB.MMCIFParser import MMCIFParser
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
-from Bio.PDB.cealign import CEAligner
 from Bio.PDB.mmcifio import MMCIFIO
 
 from posebusters import PoseBusters
@@ -319,39 +317,80 @@ def update_bond_sequence_length_with_chain(sel_chain: str, mapping_dict: dict):
     else:
         return gr.update(choices=None, value=None)
 
+def __kabsch_align(P, Q, weight, transform=False):
+    weight /= weight.sum()
+    cP = (P * weight[:, None]).sum(axis=0)
+    cQ = (Q * weight[:, None]).sum(axis=0)
+    
+    p = P - cP
+    q = Q - cQ
+    
+    H = p.T @ (np.eye(weight.shape[-1]) * weight) @  q
+    U, S, Vt = np.linalg.svd(H)
+    if np.linalg.det(Vt.T @ U.T) < 0:
+        Vt[-1, :] *= -1.0
+    R = Vt.T @ U.T
+    
+    t = cQ - R @ cP
+    if transform:
+        P_aligned = P @ R.T + t
+        diff = P_aligned - Q
+        rmsd = np.sqrt((diff**2).sum() / P.shape[0])
+        return R, t, P_aligned, rmsd
+    else:
+        return R, t, lambda x: x @ R.T + t
+
+def __extract_cif_ca_coord(cif_f: str, get_weight: bool=True):
+    mmcif_dict = MMCIF2Dict(cif_f)
+    backbone_idx = [i for i, a in enumerate(mmcif_dict['_atom_site.label_atom_id']) if a in ['CA', "C4'"]]
+    if get_weight:
+        bb_coords_conf = [[x, y, z, w] for i, (x, y, z, w) in enumerate(zip(mmcif_dict['_atom_site.Cartn_x'],
+                                                                            mmcif_dict['_atom_site.Cartn_y'],
+                                                                            mmcif_dict['_atom_site.Cartn_z'],
+                                                                            mmcif_dict['_atom_site.B_iso_or_equiv'],)) 
+                        if i in backbone_idx]
+        bb_coords_conf = np.array(bb_coords_conf, float)
+        conf = bb_coords_conf[:, -1]/100
+        thres = 0.4
+        return bb_coords_conf[:, :3], mmcif_dict, (np.maximum(conf-thres, 0.05) / (1-thres)) ** 2
+    else:
+        bb_coords = [[x, y, z] for i, (x, y, z) in enumerate(zip(mmcif_dict['_atom_site.Cartn_x'],
+                                                                 mmcif_dict['_atom_site.Cartn_y'],
+                                                                 mmcif_dict['_atom_site.Cartn_z'],)) 
+                     if i in backbone_idx]
+        return np.array(bb_coords, float), mmcif_dict, None
+
+def __apply_transform_to_dict(cif_dict: dict, rt_func: callable):
+    old_coords = []
+    for k in ['_atom_site.Cartn_x', '_atom_site.Cartn_y', '_atom_site.Cartn_z']:
+        old_coords.append(cif_dict[k])
+    old_coords = np.array(old_coords, float).T
+    new_coords = rt_func(old_coords)
+    for i, k in enumerate(['_atom_site.Cartn_x', '_atom_site.Cartn_y', '_atom_site.Cartn_z']):
+        cif_dict[k] = new_coords[:, i].astype(str).tolist()
+    return cif_dict
+
 def _combine_cif_models_to_dict(target_files: list):
-    mmcif_parser = MMCIFParser()
-    ref_cif = target_files[0]
-    ref_struct = mmcif_parser.get_structure('ref', ref_cif)
-    
-    aligner = CEAligner()
-    aligner.set_reference(ref_struct)
-    
-    combined_dict = MMCIF2Dict(target_files[0])
+    all_cif_dicts, all_bb_coords, all_weights, transform_funcs = [], [], [], []
+    for i, f in enumerate(target_files):
+        coord, d, w = __extract_cif_ca_coord(f, i != 0)
+        all_cif_dicts.append(d)
+        all_bb_coords.append(coord)
+        all_weights.append(w)
+    combined_dict = all_cif_dicts[0]
     atom_site_keys = [k for k in combined_dict.keys() if k.startswith('_atom_site.')]
     
-    mmcif_io = MMCIFIO()
+    for i in range(1, len(all_bb_coords)):
+        _, _, f = __kabsch_align(all_bb_coords[i], all_bb_coords[0], all_weights[i], False)
+        transform_funcs.append(f)
     
-    for i, cif_file in enumerate(target_files[1:]):
-        s = mmcif_parser.get_structure('target', cif_file)
-        t_dict = MMCIF2Dict(cif_file)
-        
-        aligner.align(s)
-        
-        mmcif_io.set_structure(s)
-        cif_io = io.StringIO()
-        mmcif_io.save(cif_io)
-        cif_io.seek(0)
-        
-        a_dict = MMCIF2Dict(cif_io)
-        for k in ['_atom_site.Cartn_x', '_atom_site.Cartn_y', '_atom_site.Cartn_z']:
-            t_dict[k] = a_dict[k]
-        
+    for i, (d, f) in enumerate(zip(all_cif_dicts[1:], transform_funcs)):
+        d = __apply_transform_to_dict(d, f)
         for k in atom_site_keys:
             if k != '_atom_site.pdbx_PDB_model_num':
-                combined_dict[k].extend(t_dict[k])
+                combined_dict[k].extend(d[k])
             else:
-                model_num = [f'{i+2}'] * len(t_dict[k])
+                model_num = [f'{i+2}'] * len(d[k])
                 combined_dict[k].extend(model_num)
     
     return combined_dict
@@ -2015,6 +2054,8 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         curr_dict = {entity_type: {'id'    : id,
                                                    seq_key : seq.upper(),
                                                    'cyclic': cyclic}}
+                    
+                    # Check for MSA
                     if entity_type == 'protein':
                         if msa_pth and use_msa:
                             target_msa = os.path.join(msa_dir, msa_rng_name, os.path.basename(msa_pth))
