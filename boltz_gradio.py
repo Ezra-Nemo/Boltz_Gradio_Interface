@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from yaml import safe_dump, safe_load
 from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem.SaltRemover import SaltRemover
 from rdkit.Geometry import Point3D
 from rdkit.Chem.rdDetermineBonds import DetermineConnectivity
 from rdkit.Contrib.SA_Score import sascorer # type: ignore
@@ -351,8 +352,8 @@ def __extract_cif_ca_coord(cif_f: str, get_weight: bool=True):
                         if i in backbone_idx]
         bb_coords_conf = np.array(bb_coords_conf, float)
         conf = bb_coords_conf[:, -1]/100
-        thres = 0.4
-        return bb_coords_conf[:, :3], mmcif_dict, (np.maximum(conf-thres, 0.05) / (1-thres)) ** 2
+        thres = 0.5
+        return bb_coords_conf[:, :3], mmcif_dict, (np.maximum(conf-thres, 0.) / (1-thres)) ** 2
     else:
         bb_coords = [[x, y, z] for i, (x, y, z) in enumerate(zip(mmcif_dict['_atom_site.Cartn_x'],
                                                                  mmcif_dict['_atom_site.Cartn_y'],
@@ -711,9 +712,11 @@ def _process_single_chem_file(chem_f: str):
         n = __check_smi_title_line(chem_f)
         mols = Chem.MultithreadedSmilesMolSupplier(chem_f, titleLine=n)
     names, smiles = [], []
+    remover = SaltRemover()
     for mol in mols:
         if mol is None:
             continue
+        mol = remover.StripMol(mol)
         if mol.HasProp('_Name'):
             name = mol.GetProp('_Name')
         else:
@@ -753,6 +756,7 @@ def _process_tabular_files(chem_f: list[str], name_col: str, chem_col: str, deli
     except:
         return [], []
     final_names, final_smiles = [], []
+    remover = SaltRemover()
     for _, row in df.iterrows():
         name = row[name_col]
         chem_str = row[chem_col]
@@ -761,6 +765,7 @@ def _process_tabular_files(chem_f: list[str], name_col: str, chem_col: str, deli
         else:
             mol = Chem.MolFromSmiles(chem_str)
         if mol is not None:
+            mol = remover.StripMol(mol)
             smi = Chem.MolToSmiles(mol)
             final_names.append(name)
             final_smiles.append(smi)

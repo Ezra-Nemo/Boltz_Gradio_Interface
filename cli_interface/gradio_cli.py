@@ -346,8 +346,8 @@ def __extract_cif_ca_coord(cif_f: str, get_weight: bool=True):
                         if i in backbone_idx]
         bb_coords_conf = np.array(bb_coords_conf, float)
         conf = bb_coords_conf[:, -1]/100
-        thres = 0.4
-        return bb_coords_conf[:, :3], mmcif_dict, (np.maximum(conf-thres, 0.05) / (1-thres)) ** 2
+        thres = 0.5
+        return bb_coords_conf[:, :3], mmcif_dict, (np.maximum(conf-thres, 0.) / (1-thres)) ** 2
     else:
         bb_coords = [[x, y, z] for i, (x, y, z) in enumerate(zip(mmcif_dict['_atom_site.Cartn_x'],
                                                                  mmcif_dict['_atom_site.Cartn_y'],
