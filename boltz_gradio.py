@@ -448,7 +448,7 @@ def execute_single_boltz(file_name: str, yaml_str: str,
     yield gr.update(value='Predicting...', interactive=False), ''
     full_output = ''
     env = dict(os.environ)
-    env['NCCL_P2P_DISABLE'] = 1
+    env['NCCL_P2P_DISABLE'] = '1'
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
@@ -519,7 +519,7 @@ def execute_multi_boltz(all_files: list[str],
     yield gr.update(value='Predicting...', interactive=False), ''
     full_output = ''
     env = dict(os.environ)
-    env['NCCL_P2P_DISABLE'] = 1
+    env['NCCL_P2P_DISABLE'] = '1'
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
@@ -616,7 +616,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
             yield gr.update(value='Predicting...', interactive=False), ''
             full_output = ''
             env = dict(os.environ)
-            env['NCCL_P2P_DISABLE'] = 1
+            env['NCCL_P2P_DISABLE'] = '1'
             curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                                     text=True, encoding="utf-8", env=env)
             for line in iter(curr_running_process.stdout.readline, ''):
