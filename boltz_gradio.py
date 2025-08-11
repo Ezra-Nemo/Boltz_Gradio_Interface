@@ -447,8 +447,10 @@ def execute_single_boltz(file_name: str, yaml_str: str,
     
     yield gr.update(value='Predicting...', interactive=False), ''
     full_output = ''
+    env = dict(os.environ)
+    env['NCCL_P2P_DISABLE'] = 1
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            text=True, encoding="utf-8")
+                                            text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:  # Just skip these warnings
@@ -516,8 +518,10 @@ def execute_multi_boltz(all_files: list[str],
     
     yield gr.update(value='Predicting...', interactive=False), ''
     full_output = ''
+    env = dict(os.environ)
+    env['NCCL_P2P_DISABLE'] = 1
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            text=True, encoding="utf-8")
+                                            text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:
@@ -611,8 +615,10 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         if idx == 0:
             yield gr.update(value='Predicting...', interactive=False), ''
             full_output = ''
+            env = dict(os.environ)
+            env['NCCL_P2P_DISABLE'] = 1
             curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                                    text=True, encoding="utf-8")
+                                                    text=True, encoding="utf-8", env=env)
             for line in iter(curr_running_process.stdout.readline, ''):
                 if 'The loaded checkpoint was produced with' in line or\
                     'You are using a CUDA device' in line:  # Just skip these warnings
@@ -640,7 +646,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
     cmd[6] = str(devices)   # replace the "devices" param back to user-defined value
     
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                            text=True, encoding="utf-8")
+                                            text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:
