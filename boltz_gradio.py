@@ -2508,7 +2508,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                     existing_chains = []
                     msa_rng_name = uuid.uuid4().hex[:8]
                     
-                    all_components += ['Ligand', binder, 'c1ccccc1', False, '']
+                    all_components += ['Ligand', binder, 'c1ccccc1', False, '', '', False]
                     
                     for i in range(0, len(all_components), component_cnt):
                         entity, chain, seq, cyclic, mod, msa_pth, use_msa = all_components[i:i+component_cnt]
