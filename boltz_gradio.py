@@ -612,6 +612,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
             f.write(safe_dump(yaml_template_dict))
         
         # execute on only a single file to retrieve msa, prevent colabfold server overload
+        # This should work for custom MSA too (update)
         if idx == 0:
             yield gr.update(value='Predicting...', interactive=False), ''
             full_output = ''
@@ -2372,6 +2373,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
             
             @gr.render(inputs=vhts_entity_number)
             def vhts_append_new_entity(counts: int):
+                component_cnt = 7
                 component_refs = []
                 for i in range(counts):
                     gr.Markdown(f'<span style="font-size:15px; font-weight:bold;">Entity {i+1}</span>', key=f'MK_{i}')
@@ -2405,11 +2407,16 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                                                     elem_classes='validation',
                                                                     show_legend=True)
                         with gr.Column(key=f'Entity_{i}_sub3', scale=1):
-                            cyclic_ckbox = gr.Checkbox(False, label='Cyclic', key=f'vhts_Cyclic_{i}')
+                            with gr.Row(key=f'Entity_{i}_sub3_group1_row1'):
+                                cyclic_ckbox = gr.Checkbox(False, label='Cyclic', min_width=50, key=f'Cyclic_{i}')
+                                msa_ckbox = gr.Checkbox(True, label='Use MSA', min_width=50, interactive=True,
+                                                        key=f'use_MSA_{i}')
                             modification_text = gr.Text(label='Modifications (Residue:CCD)',
-                                                        placeholder='2:ALY,15:MSE', key=f'vhts_Mod_{i}')
+                                                        placeholder='2:ALY,15:MSE', key=f'Mod_{i}')
+                            msa_file = gr.File(label='MSA File', file_types=['.a3m', '.csv'], height=92,
+                                               elem_classes='small-upload-style', key=f'msa_file_{i}')
                         component_refs.extend([entity_menu, chain_name_text, sequence_text,
-                                               cyclic_ckbox, modification_text])
+                                               cyclic_ckbox, modification_text, msa_file, msa_ckbox])
                         entity_menu.change(change_sequence_label,
                                            inputs=[entity_menu, sequence_text, cyclic_ckbox],
                                            outputs=[sequence_text, highlight_text, cyclic_ckbox])
@@ -2418,17 +2425,19 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                                              outputs=highlight_text)
                 
                     gr.HTML("<hr>")
-                chain_components = [comp for i, comp in enumerate(component_refs) if i % 5 == 1]
-                entity_components = [comp for i, comp in enumerate(component_refs) if i % 5 == 0]
-                for i, chain_input in enumerate(chain_components):
+                chain_components = [comp for i, comp in enumerate(component_refs) if i % component_cnt <= 1]
+                entity_components = [comp for i, comp in enumerate(component_refs) if i % component_cnt == 0]
+                for i in range(0, len(chain_components), 2):
+                    chain_input = chain_components[i+1]
+                    entity_menu = entity_components[i//2]
                     chain_input.submit(vhts_update_all_chains_dropdown,
                                        inputs=chain_components,
                                        outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
                                                 vhts_target_chain_ids])
-                    entity_components[i].change(vhts_update_all_chains_dropdown,
-                                                inputs=chain_components,
-                                                outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
-                                                         vhts_target_chain_ids])
+                    entity_menu.change(vhts_update_all_chains_dropdown,
+                                       inputs=chain_components,
+                                       outputs=[vhts_contact_1_dropdown, vhts_contact_2_dropdown,
+                                                vhts_target_chain_ids])
                 
                 def write_yaml_func(binder, target, pocket_max_d, pocket_f, aff_binder,
                                     cont_1_c, cont_1_r, cont_2_c, cont_2_r, contact_max_dist, contact_f,
@@ -2497,11 +2506,12 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         data_dict.update({'templates': all_templates})
                     
                     existing_chains = []
+                    msa_rng_name = uuid.uuid4().hex[:8]
                     
                     all_components += ['Ligand', binder, 'c1ccccc1', False, '']
                     
-                    for i in range(0, len(all_components), 5):
-                        entity, chain, seq, cyclic, mod = all_components[i:i+5]
+                    for i in range(0, len(all_components), component_cnt):
+                        entity, chain, seq, cyclic, mod, msa_pth, use_msa = all_components[i:i+component_cnt]
                         seq = seq.strip()
                         
                         # set entity type
@@ -2515,36 +2525,36 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         if len(chains) == 1:
                             id = chain.strip()
                             if id in existing_chains:
-                                return f'Chain {id} of Entity {i//5+1} already existed!'
+                                return f'Chain {id} of Entity {i//component_cnt+1} already existed!'
                             existing_chains.append(id)
                         else:
                             id = [c.strip() for c in chains]
                             for _i in id:
                                 if id.count(_i) > 1:
-                                    return f'Duplicate chain found within Entity {i//5+1}!'
+                                    return f'Duplicate chain found within Entity {i//component_cnt+1}!'
                                 if _i in existing_chains:
-                                    return f'Chain {id} of Entity {i//5+1} already existed!'
+                                    return f'Chain {id} of Entity {i//component_cnt+1} already existed!'
                             existing_chains.extend(id)
                         
                         # set key of sequence ('sequence', 'ccd' or 'smiles')
                         if not seq:
-                            return f'Entity {i//5+1} is empty!'
+                            return f'Entity {i//component_cnt+1} is empty!'
                         if entity == 'CCD':
-                            seq = seq.upper()
                             seq_key = 'ccd'
-                            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5}|[A-Z]{2})', seq):
-                                return f'Entity {i//5+1} is not a valid CCD ID!'
+                            seq = seq.upper()
+                            if not re.fullmatch(r'(?:[A-Z0-9]{3}|[A-Z0-9]{5})|[A-Z]{2}', seq):
+                                return f'Entity {i//component_cnt+1} is not a valid CCD ID!'
                         elif entity == 'Ligand':
                             seq_key = 'smiles'
                             if Chem.MolFromSmiles(seq) is None:
-                                return f'Entity {i//5+1} is not a valid SMILES!'
+                                return f'Entity {i//component_cnt+1} is not a valid SMILES!'
                         else:
                             seq = seq.upper()
                             seq_key = 'sequence'
                             valid_strs = allow_char_dict[entity]
                             for char in seq:
                                 if char not in valid_strs:
-                                    return f'Entity {i//5+1} is not a valid {entity}!'
+                                    return f'Entity {i//component_cnt+1} is not a valid {entity}!'
                         
                         # set modification
                         if mod:
@@ -2552,7 +2562,7 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                             all_mods = mod.split(',')
                             for pos_ccd in all_mods:
                                 if ':' not in pos_ccd:
-                                    return (f'Invalid modification for Entity {i//5+1}, please use ":" to '
+                                    return (f'Invalid modification for Entity {i//component_cnt+1}, please use ":" to '
                                             f'separate residue and CCD!\n')
                                 pos, ccd = pos_ccd.split(':')
                                 modifications.append({'position': int(pos), 'ccd': ccd})
@@ -2561,13 +2571,21 @@ with gr.Blocks(css=css, theme=gr.themes.Origin()) as Interface:
                         
                         if entity_type == 'ligand':
                             curr_dict = {entity_type: {'id'    : id,
-                                                       seq_key : seq,}
-                                         }
+                                                       seq_key : seq,}}
                         else:
                             curr_dict = {entity_type: {'id'    : id,
                                                        seq_key : seq.upper(),
-                                                       'cyclic': cyclic}
-                                         }
+                                                       'cyclic': cyclic}}
+                        
+                        # Check for MSA
+                        if entity_type == 'protein':
+                            if msa_pth and use_msa:
+                                target_msa = os.path.join(msa_dir, msa_rng_name, os.path.basename(msa_pth))
+                                os.makedirs(os.path.dirname(target_msa), exist_ok=True)
+                                shutil.copy(msa_pth, target_msa)
+                                curr_dict[entity_type]['msa'] = target_msa
+                            elif not use_msa:
+                                curr_dict[entity_type]['msa'] = 'empty'
                         if modifications is not None:
                             curr_dict[entity_type]['modifications'] = modifications
                         
