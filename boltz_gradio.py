@@ -57,10 +57,10 @@ property_functions = {'Molecular Weight'  : Descriptors.MolWt,
                       'Formal Charge'  : lambda mol: sum([atom.GetFormalCharge() for atom in mol.GetAtoms()]),
                       'Num. of Heavy Atoms' : Descriptors.HeavyAtomCount,
                       'Num. of Atoms'  : lambda mol: mol.GetNumAtoms(),
-                      'Molar Refractivity'  : Descriptors.MolMR,
-                      'Quantitative Estimate of Drug-Likeness (QED)' : Descriptors.qed,
-                      'Natural Product-likeness Score (NP)': partial(npscorer.scoreMol, fscore=fscore),
-                      'Synthetic Accessibility Score (SA)': sascorer.calculateScore}
+                      'Molar Refractivity'  : Descriptors.MolMR}
+property_functions_no_H = {'Quantitative Estimate of Drug-Likeness (QED)' : Descriptors.qed,
+                           'Natural Product-likeness Score (NP)': partial(npscorer.scoreMol, fscore=fscore),
+                           'Synthetic Accessibility Score (SA)': sascorer.calculateScore}
 
 file_extract_matching_map = {'Structure' : ['.cif', '.sdf', '_bust.csv'],
                              'Confidence': ['confidence_'],
@@ -449,6 +449,8 @@ def execute_single_boltz(file_name: str, yaml_str: str,
     full_output = ''
     env = dict(os.environ)
     env['NCCL_P2P_DISABLE'] = '1'
+    env["TORCH_CPP_LOG_LEVEL"] = "ERROR"
+    env["NCCL_DEBUG"] = "WARN"
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
@@ -520,6 +522,8 @@ def execute_multi_boltz(all_files: list[str],
     full_output = ''
     env = dict(os.environ)
     env['NCCL_P2P_DISABLE'] = '1'
+    env["TORCH_CPP_LOG_LEVEL"] = "ERROR"
+    env["NCCL_DEBUG"] = "WARN"
     curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             text=True, encoding="utf-8", env=env)
     for line in iter(curr_running_process.stdout.readline, ''):
@@ -618,6 +622,8 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
             full_output = ''
             env = dict(os.environ)
             env['NCCL_P2P_DISABLE'] = '1'
+            env["TORCH_CPP_LOG_LEVEL"] = "ERROR"
+            env["NCCL_DEBUG"] = "WARN"
             curr_running_process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                                     text=True, encoding="utf-8", env=env)
             for line in iter(curr_running_process.stdout.readline, ''):
@@ -1703,6 +1709,13 @@ def draw_smiles_3d(smiles_str: str):
         mol = Chem.AddHs(mol)
         data_dict = {'Property': list(property_functions), 'Value': []}
         for func in property_functions.values():
+            v = func(mol)
+            if isinstance(v, float):
+                v = round(v, 4)
+            data_dict['Value'].append(v)
+        mol = Chem.RemoveHs(mol)
+        data_dict['Property'].append(list(property_functions_no_H))
+        for func in property_functions_no_H.values():
             v = func(mol)
             if isinstance(v, float):
                 v = round(v, 4)
