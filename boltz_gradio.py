@@ -457,7 +457,7 @@ def execute_single_boltz(file_name: str, yaml_str: str,
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:  # Just skip these warnings
             continue
-        if line.startswith('Predicting DataLoader'):
+        if "%" in line or "it/s" in line or ("[" in line and "]" in line):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
         else:
             full_output += line
@@ -530,7 +530,7 @@ def execute_multi_boltz(all_files: list[str],
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:
             continue
-        if line.startswith('Predicting DataLoader'):
+        if "%" in line or "it/s" in line or ("[" in line and "]" in line):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
         else:
             full_output += line
@@ -630,7 +630,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
                 if 'The loaded checkpoint was produced with' in line or\
                     'You are using a CUDA device' in line:  # Just skip these warnings
                     continue
-                if line.startswith('Predicting DataLoader'):
+                if "%" in line or "it/s" in line or ("[" in line and "]" in line):
                     full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
                 else:
                     full_output += line
@@ -658,7 +658,7 @@ def execute_vhts_boltz(file_prefix: str, all_ligands: pd.DataFrame,
         if 'The loaded checkpoint was produced with' in line or\
             'You are using a CUDA device' in line:
             continue
-        if line.startswith('Predicting DataLoader'):
+        if "%" in line or "it/s" in line or ("[" in line and "]" in line):
             full_output = full_output.rsplit('\n', 2)[0] + '\n' + line
         else:
             full_output += line
